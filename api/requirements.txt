@@ -1,0 +1,13 @@
+# Config
+espresso-config
+
+# Server
+fastapi
+uvicorn
+
+# Server + client
+gradio
+
+# Allows us to use FastAPI's FileResponse for serving pdfs.
+aiofiles
+python-multipart

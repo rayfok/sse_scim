@@ -134,3 +134,10 @@ dmypy.json
 
 tmp/*
 /tmp
+
+# Gradio stuff
+gradio_queue.db
+api/flagged/*
+api/output/*
+api/temp/*
+api/index.html

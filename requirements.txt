@@ -1,7 +1,0 @@
-spacy
-textacy
-nltk
-datasets
-click
-en-core-web-sm==3.2.0
-en-core-web-trf==3.2.0

@@ -1,21 +1,15 @@
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-import logging
-import sys
-import time
-import spacy
-from spacy.util import filter_spans
-from spacy.tokens.span import Span
-from nltk.stem.porter import PorterStemmer
-import itertools
-from typing import NamedTuple, Sequence, Dict, Literal, Set, Callable
-from itertools import chain, product
 from functools import partial
+from typing import Callable, Dict, Literal, NamedTuple, Sequence, Set
 
 import datasets
-import click
-import tqdm
-# import espresso_config
+import espresso_config as es
+import spacy
+from nltk.stem.porter import PorterStemmer
+from spacy.tokens.span import Span
+from spacy.util import filter_spans
 from textacy.extract.basics import ngrams, noun_chunks
 
 
@@ -35,7 +29,7 @@ class QAIntersections:
         field(default_factory=dict)
     abstract_answer: Dict[Span, MatchedChunk] = \
         field(default_factory=dict)
-    abstract_answer_question: Dict[Span,MatchedChunk] = \
+    abstract_answer_question: Dict[Span, MatchedChunk] = \
         field(default_factory=dict)
 
     def __len__(self):
@@ -271,52 +265,37 @@ class Seq2SeqFeaturesMapperWithFocus:
         return accumulator
 
 
-@click.command()
-@click.option('--dataset-name', default='qasper', type=str)
-@click.option('--split', type=str, required=True)
-@click.option('--use-lemma', is_flag=True)
-@click.option('--use-stem', is_flag=True)
-@click.option('--spacy-model-name', type=str, default="en_core_web_sm")
-@click.option('--expand-abstract', is_flag=True)
-@click.option('--expand-question', is_flag=True)
-@click.option('--expand-answer', is_flag=True)
-@click.option('--nprocs', default=None, type=int)
-def main(dataset_name,
-         split,
-         use_lemma,
-         use_stem,
-         spacy_model_name,
-         expand_abstract,
-         expand_question,
-         expand_answer,
-         nprocs):
+class MatchConfig(es.ConfigNode):
+    dataset_name: es.ConfigParam(str) = 'qasper'
+    split: es.ConfigParam(str)
+    use_lemma: es.ConfigParam(bool) = False
+    use_stem: es.ConfigParam(bool) = False
+    spacy_model_name: es.ConfigParam(str) = 'en_core_web_sm'
+    expand_abstract: es.ConfigParam(bool) = False
+    expand_question: es.ConfigParam(bool) = False
+    expand_answer: es.ConfigParam(bool) = False
+    nprocs: es.ConfigParam(int) = None
 
-    options = (f'dataset_name........{dataset_name}',
-               f'split...............{split}',
-               f'use_lemma...........{use_lemma}',
-               f'use_stem............{use_stem}',
-               f'spacy_model_name....{spacy_model_name}',
-               f'expand_abstract.....{expand_abstract}',
-               f'expand_question.....{expand_question}',
-               f'expand_answer.......{expand_answer}',
-               f'nprocs..............{nprocs}')
-    sep = max(map(len, options)) * '-'
-    print(f'{sep}\n' + '\n'.join(options) + f'\n{sep}')
 
-    mapper = Seq2SeqFeaturesMapperWithFocus(use_lemma=use_lemma,
-                                            use_stem=use_stem,
-                                            spacy_model_name=spacy_model_name,
-                                            expand_abstract=expand_abstract,
-                                            expand_question=expand_question,
-                                            expand_answer=expand_answer)
+@es.cli(MatchConfig)
+def main(config: MatchConfig):
+    mapper = Seq2SeqFeaturesMapperWithFocus(
+        use_lemma=config.use_lemma,
+        use_stem=config.use_stem,
+        spacy_model_name=config.spacy_model_name,
+        expand_abstract=config.expand_abstract,
+        expand_question=config.expand_question,
+        expand_answer=config.expand_answer
+    )
 
     datasets.disable_progress_bar()
 
-    dataset = datasets.load_dataset(path=dataset_name, split=split)
+    dataset = datasets.load_dataset(path=config.dataset_name,
+                                    split=config.split)
 
     dataset = dataset.map(mapper.transform,
                           batched=True,
-                          num_proc=nprocs,
+                          num_proc=config.nprocs,
                           batch_size=None,
                           remove_columns=dataset.column_names)
 
