@@ -1,6 +1,9 @@
-from espresso_config import ConfigNode, ConfigFlexNode, ConfigParam, TargetType
-from os.path import realpath, abspath, dirname
+from os.path import realpath, abspath, dirname, exists
+import urllib.request
 
+from espresso_config import (
+    ConfigNode, ConfigFlexNode, ConfigParam, TargetType, configure_logging
+)
 from mmda.parsers.pdfplumber_parser import PDFPlumberParser
 from mmda.rasterizers.rasterizer import PDF2ImageRasterizer
 from mmda.predictors.lp_predictors import LayoutParserPredictor
@@ -13,7 +16,16 @@ from mmda.predictors.heuristic_predictors.dictionary_word_predictor import \
 from .noun_chunks import Seq2SeqFeaturesMapperWithFocusConfig
 from .scorers import LongestCommonSubsequenceScorer
 
-DATA_PATH = realpath(abspath(dirname(__file__) + '/data'))
+LOGGER = configure_logging(logger_name=__file__)
+
+
+def word_alpha() -> str:
+    url = 'https://github.com/dwyl/english-words/raw/master/words_alpha.txt'
+    dst = realpath(abspath(dirname(__file__) + '/data/words_alpha.txt'))
+    if not exists(dst):
+        LOGGER.info(f'Downloading {url} for {dst}...')
+        urllib.request.urlretrieve(url, dst)
+    return dst
 
 
 class MmdaParserConfig(ConfigNode):
@@ -47,7 +59,7 @@ class MmdaParserConfig(ConfigNode):
 
     class words(ConfigFlexNode):
         _target_: ConfigParam(TargetType) = DictionaryWordPredictor
-        dictionary_file_path: ConfigParam(str) = f'{DATA_PATH}/words_alpha.txt'
+        dictionary_file_path: ConfigParam(str) = word_alpha()
 
     class noun_chunks(Seq2SeqFeaturesMapperWithFocusConfig):
         reuse_spacy_pipeline: ConfigParam(bool) = True
