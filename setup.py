@@ -1,16 +1,27 @@
 
 import setuptools
 
+import subprocess
+import sys
+
+
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+
+# We must install torch here cuz detectron2 requires it during setup
+install('torch==1.9.0')
+
+
 setuptools.setup(
     name="mmda_pdf_scorer",
-    version="0.0.3",
+    version="0.0.4",
     python_requires=">= 3.8",
-    packages=setuptools.find_packages(),
-    setup_requires=[
-        'torch==1.9.0'
-    ],
+    package_dir={"": "src"},
+    packages=setuptools.find_packages("src"),
     install_requires=[
         'pybind11',
+        'torch==1.9.0',
         'espresso-config==0.10.0',
         'spacy==3.2.4',
         'thefuzz[speedup]==0.19.0',
@@ -26,8 +37,8 @@ setuptools.setup(
         'PyPDF2==1.26.0',
         'transformers==4.5',
         'layoutparser[effdet]==0.3.4',
-        'vila[lp_predictors,vila_predictors]==0.3.0',
+        'vila==0.3.0',
         'detectron2 @ git+https://github.com/facebookresearch/detectron2@v0.4',
-        'mmda @ git+https://github.com/allenai/mmda@lucas/fix-float-bboxes'
+        'mmda[lp_predictors,vila_predictors] @ git+https://github.com/allenai/mmda@lucas/fix-float-bboxes'
     ],
 )

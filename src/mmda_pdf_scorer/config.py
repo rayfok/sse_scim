@@ -1,5 +1,6 @@
-from os.path import realpath, abspath, dirname, exists
+import os
 import urllib.request
+from pathlib import Path
 
 from espresso_config import (
     ConfigNode, ConfigFlexNode, ConfigParam, TargetType, configure_logging
@@ -21,10 +22,12 @@ LOGGER = configure_logging(logger_name=__file__)
 
 def word_alpha() -> str:
     url = 'https://github.com/dwyl/english-words/raw/master/words_alpha.txt'
-    dst = realpath(abspath(dirname(__file__) + '/data/words_alpha.txt'))
-    if not exists(dst):
+    dst = Path('~/.cache/mmda_pdf_scorer/words_alpha.txt')\
+        .expanduser().absolute()
+    if not dst.exists():
+        os.mkdir(dst.parent)
         LOGGER.info(f'Downloading {url} for {dst}...')
-        urllib.request.urlretrieve(url, dst)
+        urllib.request.urlretrieve(url, str(dst))
     return dst
 
 
