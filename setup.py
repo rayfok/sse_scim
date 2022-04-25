@@ -3,7 +3,7 @@ import setuptools
 
 setuptools.setup(
     name="mmda_pdf_scorer",
-    version="0.0.1",
+    version="0.0.2",
     python_requires=">= 3.8",
     packages=setuptools.find_packages(),
     setup_requires=[
