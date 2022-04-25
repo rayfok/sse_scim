@@ -1,7 +1,6 @@
 
 from dataclasses import dataclass
 from enum import IntEnum
-import json
 import logging
 from pathlib import Path
 from typing import Optional, OrderedDict, Sequence, Tuple, Union
