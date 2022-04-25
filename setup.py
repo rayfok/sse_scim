@@ -3,13 +3,14 @@ import setuptools
 
 setuptools.setup(
     name="mmda_pdf_scorer",
-    version="0.0.2",
+    version="0.0.3",
     python_requires=">= 3.8",
     packages=setuptools.find_packages(),
     setup_requires=[
         'torch==1.9.0'
     ],
     install_requires=[
+        'pybind11',
         'espresso-config==0.10.0',
         'spacy==3.2.4',
         'thefuzz[speedup]==0.19.0',
