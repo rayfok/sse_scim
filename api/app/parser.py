@@ -4,7 +4,7 @@ from enum import IntEnum
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Sequence, Tuple, Union
+from typing import Optional, OrderedDict, Sequence, Tuple, Union
 from espresso_config import cli, instantiate, configure_logging
 import torch
 import warnings
@@ -19,8 +19,15 @@ from mmda.predictors.base_predictors.base_predictor import BasePredictor
 from spacy.tokens import Doc
 
 from .config import MmdaParserConfig, CliMmdaParserConfig
-from .utils import slice_block_from_tokens, SentenceRows
+from .utils import slice_block_from_tokens, SentenceRows, ScoredSentenceRows
 from .noun_chunks import Seq2SeqFeaturesMapperWithFocus
+from .scorers import BaseScorer, Index
+from .types import (
+    ScholarPhiEntity,
+    sentence_to_scholarphi_format,
+    term_to_scholarphi_format,
+    get_sentence_id
+)
 
 LOGGER = configure_logging(logger_name=__file__, logging_level=logging.INFO)
 
@@ -55,6 +62,7 @@ class MmdaPdfParser:
     _sentences_predictor: BasePredictor = None
     _words_predictor: BasePredictor = None
     _nlp: Seq2SeqFeaturesMapperWithFocus = None
+    _scorer: BaseScorer = None
 
     def __init__(self, config: Optional[MmdaParserConfig] = None):
         self.config = config or MmdaParserConfig()
@@ -103,6 +111,12 @@ class MmdaPdfParser:
         if self._words_predictor is None:
             self._words_predictor = instantiate.now(self.config.words)
         return self._words_predictor
+
+    @property
+    def scorer(self) -> BaseScorer:
+        if self._scorer is None:
+            self._scorer = instantiate.now(self.config.scorer)
+        return self._scorer
 
     def parse_pdf(self, path: Union[str, Path]) -> Document:
         # cast if not path
@@ -187,32 +201,71 @@ class MmdaPdfParser:
         for sentence in abstract:
             block_text = Doc(self.nlp.get_spacy_pipeline().vocab,
                              [' '.join(w.symbols) for w in sentence.words])
+            parsed_sentence = self.nlp.get_spacy_pipeline()(block_text)
 
-            parsed_sentence = self.nlp.get_spacy_pipeline()(sentence.sentence)
+            for nc in self.nlp.find_chunks(parsed_sentence):
+                noun_chunk = slice_block_from_tokens(
+                    block=sentence,
+                    bos_token=sentence.tokens[nc.start],
+                    # positions in spacy and exclusive of last position
+                    eos_token=sentence.tokens[nc.end - 1]
+                )
+                abstract_noun_chunks.append(noun_chunk)
 
-            # for nc in self.nlp.find_chunks(parsed_sentence):
-            #     slice_block_from_tokens(block=sentence, bos_token=sentence.tokens)
-
-
-            import ipdb
-            ipdb.set_trace()
+        return abstract_noun_chunks
 
     def score_body_sentences(
         self,
         noun_chunk: SpanGroup,
-        body: Sequence[SentenceRows]
-    ) -> Sequence[SpanGroup]:
-        ...
+        body: Sequence[SentenceRows],
+        index: Index
+    ) -> Sequence[ScoredSentenceRows]:
+        all_scored_sentence = []
 
-    def __call__(self, path: Union[str, Path]):
+        for sentence in body:
+            score = self.scorer.score(
+                query=noun_chunk, text=sentence, index=index
+            )
+            scored_sentence = ScoredSentenceRows.from_sentence(
+                score=score, query=noun_chunk, sentence=sentence
+            )
+            all_scored_sentence.append(scored_sentence)
+
+        return all_scored_sentence
+
+    def score_all_sentences(
+        self,
+        path: Union[str, Path]
+    ) -> Sequence[ScholarPhiEntity]:
+
         doc = self.parse_pdf(path)
         sentences = self.get_all_sentences(doc)
+        index = self.scorer.build_index(sentences)
         abstract, body = self.get_abstract_and_body(sentences)
         noun_chunks = self.get_noun_chunk(abstract)
-        scored_body = {nc: self.score_body_sentences(noun_chunk=nc, body=body)
-                       for nc in noun_chunks}
 
-        return scored_body
+        entities = OrderedDict()
+
+        for nc in noun_chunks:
+            scored_sentences = self.score_body_sentences(
+                noun_chunk=nc, body=body, index=index
+            )
+            scored_sentences_entities = [
+                entities.setdefault(get_sentence_id(s),
+                                    sentence_to_scholarphi_format(s))
+                for s in scored_sentences
+            ]
+            [
+                entities.setdefault(ent.id, ent)
+                for ent in term_to_scholarphi_format(
+                    span=nc,
+                    sentences=scored_sentences_entities,
+                    scores=(s.score for s in scored_sentences)
+                )
+            ]
+
+        return tuple(entities.values())
+
 
 
 @cli(CliMmdaParserConfig)
@@ -220,11 +273,12 @@ def main(config: CliMmdaParserConfig):
     configure_logging(logging_level=config.logging_level)
     parser = MmdaPdfParser(config)
 
-    parsed = parser(path=config.path)
+    parsed = parser.score_all_sentences(path=config.path)
+
     if config.save_path:
         with open(config.save_path, 'w', encoding='utf-8') as f:
             for sentence in parsed:
-                f.write(json.dumps(sentence.to_json()) + '\n')
+                f.write(sentence.json() + '\n')
 
 
 if __name__ == '__main__':

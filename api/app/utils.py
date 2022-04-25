@@ -1,7 +1,9 @@
-from collections import defaultdict
-from dataclasses import dataclass, field
+
+from dataclasses import dataclass, field, fields
 from itertools import chain
+from re import I
 from typing import Literal, Sequence
+
 
 from mmda.types.annotation import SpanGroup
 from mmda.types.span import Span
@@ -16,6 +18,30 @@ class SentenceRows(SpanGroup):
     def sentence(self):
         return ' '.join(''.join(symbol.rstrip('-') for symbol in word.symbols)
                         for word in self.words)
+
+
+@dataclass
+class ScoredSentenceRows(SentenceRows):
+    score: float = None
+    query: SentenceRows = None
+
+    @classmethod
+    def from_sentence(cls,
+                      query: SentenceRows,
+                      score: float,
+                      sentence: SentenceRows) -> 'ScoredSentenceRows':
+        sentence_data = {
+            f.name: getattr(sentence, f.name) for f in fields(sentence)
+            # we want a fresh new uuid && we will attach dataset later
+            if f.name != 'uuid' and f.name != 'doc' and f.name != 'id'
+        }
+        scored_sentence = cls(score=score,
+                              id=sentence.id or sentence.uuid,
+                              query=query,
+                              **sentence_data)
+        scored_sentence.attach_doc(sentence.doc)
+
+        return scored_sentence
 
 
 def partition_row_on_token(row: SpanGroup,

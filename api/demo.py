@@ -9,7 +9,7 @@ from espresso_config import (
     configure_logging
 )
 
-from app.parser import get_sentences, MmdaParserConfig
+from app.parser import MmdaPdfParser, MmdaParserConfig
 
 LOGGER = configure_logging(logger_name=__file__, logging_level=logging.INFO)
 
@@ -24,21 +24,12 @@ class Config(ConfigNode):
         enable_queue: ConfigParam(bool) = True
 
 
-class PdfParser():
-    def __init__(self):
-        self.config = MmdaParserConfig()
-
-    def parse_pdf(self, temp_fn: NamedTemporaryFile):
-        parsed = get_sentences(temp_fn.name, config=self.config)
-        return [s.to_json() for s in parsed]
-
-
 
 @cli(Config, print_fn=logging.warn)
 def main(config: Config):
     gr.close_all()
 
-    pdf_parser = PdfParser()
+    pdf_parser = MmdaPdfParser()
 
     interface = gr.Interface(
         fn=pdf_parser.parse_pdf,
