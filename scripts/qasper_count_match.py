@@ -130,13 +130,13 @@ class Seq2SeqFeaturesMapperWithFocus:
         stemmer = PorterStemmer()
         stem_fn = ((lambda x: stemmer.stem(lemmize_fn(x)))
                    if self.use_stem else lemmize_fn)
-        chunk_intersect_fn = partial(self.chunk_intersect, normalize_fn=stem_fn)
+        chunk_intersect_fn = partial(self.chunk_intersect,
+                                     normalize_fn=stem_fn)
 
         # process abstract and get chunks
         abstract_chunks = set(self.find_chunks(abstract))
         if self.expand_abstract:
             abstract_chunks = self.expand_chunks_set(abstract_chunks)
-
 
         # process question and get chunks
         question = nlp(question)
@@ -180,7 +180,7 @@ class Seq2SeqFeaturesMapperWithFocus:
                 # intersect abstract, keep longest spans
                 answer_chunks_in_abstract = set(filter_spans(
                     chunk_intersect_fn(source_chunks=answer_chunks,
-                                        target_chunks=abstract_chunks)
+                                       target_chunks=abstract_chunks)
                 ))
                 abstract_chunks_in_answer = chunk_intersect_fn(
                     source_chunks=abstract_chunks,
@@ -209,7 +209,8 @@ class Seq2SeqFeaturesMapperWithFocus:
                     chunk_intersect_fn(
                         source_chunks=abstract_chunks,
                         target_chunks=question_chunks_in_abs_and_ans_filter
-                ))
+                    )
+                )
                 abstract_answer_question_iscs = {
                     match: MatchedChunk(source=abstract,
                                         target=question,
@@ -223,7 +224,6 @@ class Seq2SeqFeaturesMapperWithFocus:
                     abstract_answer_question=abstract_answer_question_iscs
                 )
 
-
     def transform(self, batch):
         nlp = self.get_spacy_pipeline()
 
@@ -234,9 +234,9 @@ class Seq2SeqFeaturesMapperWithFocus:
 
             for question, answers in zip(questions, questions_answers):
                 it = self._extract_shared_tokens(abstract=abstract,
-                                                question=question,
-                                                answers=answers,
-                                                nlp=nlp)
+                                                 question=question,
+                                                 answers=answers,
+                                                 nlp=nlp)
                 question_abstract = 0
                 answer_abstract = 0
                 question_answer_abstract = 0

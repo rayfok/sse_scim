@@ -15,5 +15,8 @@ COPY app app/
 COPY demo.py demo.py
 COPY serve.py serve.py
 
+# install the spacy model
+RUN python -m spacy download en_core_web_sm
+
 # Kick things off
 CMD ["uvicorn", "serve:app", "--host", "0.0.0.0"]

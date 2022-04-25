@@ -141,3 +141,6 @@ api/flagged/*
 api/output/*
 api/temp/*
 api/index.html
+
+# Big text file
+api/app/data/words_alpha.txt

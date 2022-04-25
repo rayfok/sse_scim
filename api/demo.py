@@ -9,7 +9,7 @@ from espresso_config import (
     configure_logging
 )
 
-from app.parser import parse_pdf, MmdaParserConfig
+from app.parser import get_sentences, MmdaParserConfig
 
 LOGGER = configure_logging(logger_name=__file__, logging_level=logging.INFO)
 
@@ -29,7 +29,7 @@ class PdfParser():
         self.config = MmdaParserConfig()
 
     def parse_pdf(self, temp_fn: NamedTemporaryFile):
-        parsed = parse_pdf(temp_fn.name, config=self.config)
+        parsed = get_sentences(temp_fn.name, config=self.config)
         return [s.to_json() for s in parsed]
 
 

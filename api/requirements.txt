@@ -1,12 +1,15 @@
 # Config
-espresso-config
+espresso-config==0.10.0
 
 # Server
 fastapi
 uvicorn
 
-# Server + client
+# Demo
 gradio
+
+# Spacy
+spacy==3.2.0
 
 # Allows us to use FastAPI's FileResponse for serving pdfs.
 aiofiles

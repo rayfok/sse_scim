@@ -1,6 +1,6 @@
 import logging
 
-from app.parser import parse_pdf
+from app.parser import get_sentences
 
 from fastapi import FastAPI, Request, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -13,6 +13,6 @@ app = FastAPI()
 @app.post("/api/parse")
 def upload_paper_ui(request: Request, file: UploadFile = File(...)):
 
-    parsed = parse_pdf(file.filename)
+    parsed = get_sentences(file.filename)
 
     return JSONResponse(content=parsed, status_code=200)
