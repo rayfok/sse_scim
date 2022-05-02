@@ -197,19 +197,27 @@ class MmdaPdfParser:
     ) -> Sequence[SpanGroup]:
 
         abstract_noun_chunks = []
+        prog = tqdm.tqdm(desc='Getting Noun Chunks from abstract...',
+                         unit=' NCs')
+
         for sentence in abstract:
+            sentence_words = sentence.words
             block_text = Doc(self.nlp.get_spacy_pipeline().vocab,
-                             [' '.join(w.symbols) for w in sentence.words])
+                             [' '.join(w.symbols) for w in sentence_words])
             parsed_sentence = self.nlp.get_spacy_pipeline()(block_text)
 
             for nc in self.nlp.find_chunks(parsed_sentence):
+                print(repr(str(nc)))
                 noun_chunk = slice_block_from_tokens(
                     block=sentence,
-                    bos_token=sentence.tokens[nc.start],
-                    # positions in spacy and exclusive of last position
-                    eos_token=sentence.tokens[nc.end - 1]
+                    bos_token=sentence_words[nc.start],
+                    # positions in spacy are exclusive of last position,
+                    # but not in our code! So "-1"  it is.
+                    eos_token=sentence_words[nc.end - 1]
                 )
+
                 abstract_noun_chunks.append(noun_chunk)
+                prog.update(1)
 
         return abstract_noun_chunks
 
@@ -246,6 +254,7 @@ class MmdaPdfParser:
         entities = OrderedDict()
 
         for nc in noun_chunks:
+
             scored_sentences = self.score_body_sentences(
                 noun_chunk=nc, body=body, index=index
             )

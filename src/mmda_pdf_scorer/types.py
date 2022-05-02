@@ -1,4 +1,4 @@
-from typing import Sequence, Tuple, Type
+from typing import Sequence, Tuple, Type, Optional
 
 from pydantic import BaseModel, Field
 from mmda.types.span import Span
@@ -20,7 +20,7 @@ class ScholarPhiBoundingBox(BaseModel):
                    left=span.box.l,
                    width=span.box.w,
                    top=span.box.t,
-                   height=span.box.w)
+                   height=span.box.h)
 
 
 class ScholarPhiAttributes(BaseModel):
@@ -52,8 +52,10 @@ class ScholarPhiSentence(ScholarPhiEntity):
 
 
 class ScholarPhiTermAttributes(ScholarPhiAttributes):
-    term_type: str = None
+    name: str
+    term_type: Optional[str] = None
     definitions: Sequence[str] = Field(default_factory=list)
+    definition_texs: Sequence[str] = Field(default_factory=list)
     sources: Sequence[str] = Field(default_factory=list)
     snippets: Sequence[str] = Field(default_factory=list)
 
@@ -108,20 +110,23 @@ def term_to_scholarphi_format(
 
     term = ScholarPhiTerm(
         id=get_term_id(span),
-        attributes=ScholarPhiAttributes(
+        attributes=ScholarPhiTermAttributes(
             name=span.sentence,
             term_type=None,
             bounding_boxes=sentence.attributes.bounding_boxes,
             definitions=[span.sentence],
-            sources=["tex"],
+            definition_texs=[span.sentence],
+            sources=['inline'],
             snippets=[s.attributes.text for s in sentences]
         ),
         relationships=ScholarPhiTermRelationship(
-            sentence=ScholarPhiEntityReference(id=sentence.id,
-                                               type=sentence.type),
+            sentence=ScholarPhiEntityReference(
+                id=sentence.id, type=sentence.type
+            ),
             snippet_sentences=[
-                ScoredScholarPhiEntityReference(id=s.id, type=s.type, score=r)
-                for s, r in zip(sentences, scores)
+                ScoredScholarPhiEntityReference(
+                    id=s.id, type=s.type, score=r
+                ) for s, r in zip(sentences, scores)
             ]
         )
     )
