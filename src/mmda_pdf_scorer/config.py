@@ -15,7 +15,7 @@ from mmda.predictors.heuristic_predictors.dictionary_word_predictor import \
     DictionaryWordPredictor
 
 from .noun_chunks import Seq2SeqFeaturesMapperWithFocusConfig
-from .scorers import LongestCommonSubsequenceScorer
+from .scorers import LongestCommonSubsequenceScorer, CtrlFScorer
 
 LOGGER = configure_logging(logger_name=__file__)
 
@@ -74,7 +74,8 @@ class MmdaParserConfig(ConfigNode):
 
     class scorer(ConfigFlexNode):
         _target_: ConfigParam(TargetType) = \
-            TargetType(LongestCommonSubsequenceScorer)
+            TargetType(CtrlFScorer)
+        lowercase: ConfigParam(bool) = True
 
 
 class CliMmdaParserConfig(MmdaParserConfig):

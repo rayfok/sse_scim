@@ -207,7 +207,6 @@ class MmdaPdfParser:
             parsed_sentence = self.nlp.get_spacy_pipeline()(block_text)
 
             for nc in self.nlp.find_chunks(parsed_sentence):
-                print(repr(str(nc)))
                 noun_chunk = slice_block_from_tokens(
                     block=sentence,
                     bos_token=sentence_words[nc.start],
