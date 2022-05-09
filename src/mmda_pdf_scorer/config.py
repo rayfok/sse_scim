@@ -14,8 +14,8 @@ from mmda.predictors.heuristic_predictors.sentence_boundary_predictor import \
 from mmda.predictors.heuristic_predictors.dictionary_word_predictor import \
     DictionaryWordPredictor
 
-from .noun_chunks import Seq2SeqFeaturesMapperWithFocusConfig
-from .scorers import LongestCommonSubsequenceScorer, CtrlFScorer
+from mmda_pdf_scorer.noun_chunks import Seq2SeqFeaturesMapperWithFocusConfig
+from mmda_pdf_scorer.scorers import CtrlFScorer
 
 LOGGER = configure_logging(logger_name=__file__)
 
@@ -76,6 +76,8 @@ class MmdaParserConfig(ConfigNode):
         _target_: ConfigParam(TargetType) = \
             TargetType(CtrlFScorer)
         lowercase: ConfigParam(bool) = True
+        ngrams: ConfigParam(int) = 3
+        punct: ConfigParam(bool) = False
 
 
 class CliMmdaParserConfig(MmdaParserConfig):

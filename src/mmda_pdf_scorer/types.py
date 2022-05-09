@@ -3,7 +3,7 @@ from typing import Sequence, Tuple, Type, Optional
 from pydantic import BaseModel, Field
 from mmda.types.span import Span
 
-from .utils import ScoredSentenceRows
+from mmda_pdf_scorer.utils import ScoredSentenceRows
 
 
 class ScholarPhiBoundingBox(BaseModel):
@@ -115,7 +115,7 @@ def term_to_scholarphi_format(
             term_type=None,
             bounding_boxes=sentence.attributes.bounding_boxes,
             definitions=[span.sentence],
-            definition_texs=[span.sentence],
+            definition_texs=[span.sentence.replace('%', '\\%')],
             sources=['inline'],
             snippets=[s.attributes.text for s in sentences]
         ),

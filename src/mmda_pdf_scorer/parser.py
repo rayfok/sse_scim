@@ -17,11 +17,12 @@ from mmda.predictors.base_predictors.base_predictor import BasePredictor
 
 from spacy.tokens import Doc
 
-from .config import MmdaParserConfig, CliMmdaParserConfig
-from .utils import slice_block_from_tokens, SentenceRows, ScoredSentenceRows
-from .noun_chunks import Seq2SeqFeaturesMapperWithFocus
-from .scorers import BaseScorer, Index
-from .types import (
+from mmda_pdf_scorer.config import MmdaParserConfig, CliMmdaParserConfig
+from mmda_pdf_scorer.utils import \
+    slice_block_from_tokens, SentenceRows, ScoredSentenceRows
+from mmda_pdf_scorer.noun_chunks import Seq2SeqFeaturesMapperWithFocus
+from mmda_pdf_scorer.scorers import BaseScorer, Index
+from mmda_pdf_scorer.types import (
     ScholarPhiEntity,
     sentence_to_scholarphi_format,
     term_to_scholarphi_format,
@@ -159,12 +160,14 @@ class MmdaPdfParser:
                     split_token_based_on_sentences_boundary(block_text)
 
                 for start, end in slices:
-                    sentence_rows = slice_block_from_tokens(
-                        block=block,
-                        bos_token=block.tokens[start],
-                        eos_token=block.tokens[end - 1])
-
-                    all_sentences.append(sentence_rows)
+                    try:
+                        sentence_rows = slice_block_from_tokens(
+                            block=block,
+                            bos_token=block.tokens[start],
+                            eos_token=block.tokens[end - 1])
+                        all_sentences.append(sentence_rows)
+                    except Exception:
+                        ...
                     prog.update()
         prog.close()
 
