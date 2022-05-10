@@ -2,7 +2,6 @@ torch==1.9.0
 espresso-config==0.10.0
 spacy==3.2.4
 thefuzz[speedup]==0.19.0
-pylcs==0.0.6
 pydantic==1.8.2
 textacy==0.12.0
 nltk==3.7.0
