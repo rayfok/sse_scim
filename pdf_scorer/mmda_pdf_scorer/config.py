@@ -14,8 +14,8 @@ from mmda.predictors.heuristic_predictors.sentence_boundary_predictor import \
 from mmda.predictors.heuristic_predictors.dictionary_word_predictor import \
     DictionaryWordPredictor
 
-from .noun_chunks import Seq2SeqFeaturesMapperWithFocusConfig
-from .scorers import LongestCommonSubsequenceScorer
+from mmda_pdf_scorer.noun_chunks import Seq2SeqFeaturesMapperWithFocusConfig
+from mmda_pdf_scorer.scorers import CtrlFScorer
 
 LOGGER = configure_logging(logger_name=__file__)
 
@@ -28,21 +28,23 @@ def word_alpha() -> str:
         os.mkdir(dst.parent)
         LOGGER.info(f'Downloading {url} for {dst}...')
         urllib.request.urlretrieve(url, str(dst))
-    return dst
+    return str(dst)
 
 
 class MmdaParserConfig(ConfigNode):
     dpi: ConfigParam(int) = 72
 
     class parser(ConfigFlexNode):
-        _target_: ConfigParam(TargetType) = PDFPlumberParser
+        _target_: ConfigParam(TargetType) = \
+            TargetType(PDFPlumberParser)
 
     class rasterizer(ConfigFlexNode):
-        _target_: ConfigParam(TargetType) = PDF2ImageRasterizer
+        _target_: ConfigParam(TargetType) = \
+            TargetType(PDF2ImageRasterizer)
 
     class lp(ConfigFlexNode):
         _target_: ConfigParam(TargetType) = \
-            LayoutParserPredictor.from_pretrained
+            TargetType(LayoutParserPredictor.from_pretrained)
         config_path: ConfigParam(str) = 'lp://efficientdet/PubLayNet'
         label_map: ConfigParam(dict) = {1: "Text",
                                         2: "Title",
@@ -51,24 +53,31 @@ class MmdaParserConfig(ConfigNode):
                                         5: "Figure"}
 
     class vila(ConfigFlexNode):
-        _target_: ConfigParam(TargetType) = IVILAPredictor.from_pretrained
+        _target_: ConfigParam(TargetType) = \
+            TargetType(IVILAPredictor.from_pretrained)
         model_name_or_path: ConfigParam(str) = \
             'allenai/ivila-block-layoutlm-finetuned-docbank'
         added_special_sepration_token: ConfigParam(str) = "[BLK]"
         agg_level: ConfigParam(str) = "block"
 
     class sentence(ConfigFlexNode):
-        _target_: ConfigParam(TargetType) = PysbdSentenceBoundaryPredictor
+        _target_: ConfigParam(TargetType) = \
+            TargetType(PysbdSentenceBoundaryPredictor)
 
     class words(ConfigFlexNode):
-        _target_: ConfigParam(TargetType) = DictionaryWordPredictor
+        _target_: ConfigParam(TargetType) = \
+            TargetType(DictionaryWordPredictor)
         dictionary_file_path: ConfigParam(str) = word_alpha()
 
     class noun_chunks(Seq2SeqFeaturesMapperWithFocusConfig):
         reuse_spacy_pipeline: ConfigParam(bool) = True
 
     class scorer(ConfigFlexNode):
-        _target_: ConfigParam(TargetType) = LongestCommonSubsequenceScorer
+        _target_: ConfigParam(TargetType) = \
+            TargetType(CtrlFScorer)
+        lowercase: ConfigParam(bool) = True
+        ngrams: ConfigParam(int) = 3
+        punct: ConfigParam(bool) = False
 
 
 class CliMmdaParserConfig(MmdaParserConfig):

@@ -45,14 +45,15 @@ class ScoredSentenceRows(SentenceRows):
 
 
 def partition_row_on_token(row: SpanGroup,
-                           token: SpanGroup,
+                           token: Span,
                            direction: Literal['before', 'after']) -> SpanGroup:
     """Partition a row on a given token; keep either everything before the
     token, or everything after it (token is always included)"""
 
-    assert len(row.rows) == 1, "`row` is not a single row"
-    assert len(token.tokens) == 1, "`token` is not a single token"
-    assert token in row.tokens, "token is not part of this row"
+    if len(row.rows) != 1:
+        raise ValueError("`row` is not a single row")
+    if token.start < row.start or token.end > row.end:
+        raise ValueError("token is not part of this row")
 
     if direction == 'after':
         row_tokens = [t for t in row.tokens if t.start >= token.start]
@@ -82,29 +83,41 @@ def slice_block_from_tokens(block: SpanGroup,
         if row.end < bos_token.start:
             # this row is completely before start token
             continue
-        elif row.start > eos_token.end:
+
+        if row.start > eos_token.end:
             # this row is completely after end token
             continue
-        elif bos_token.start >= row.start and bos_token.end <= row.end:
+
+        if bos_token[0].start >= row.start and bos_token[0].end <= row.end:
             # the start token is part of this row; we need to
             # partition this row so that only part of it is included
             # in the accumulator
+            #
+            # In the case of multi tokens spans (which is the case
+            # for words that span over multiple rows), we only care
+            # about the first one.
             row = partition_row_on_token(
-                row=row, token=bos_token, direction='after'
+                row=row, token=bos_token[0], direction='after'
             )
-        elif eos_token.start >= row.start and eos_token.end <= row.end:
+
+        if eos_token[-1].start >= row.start and eos_token[-1].end <= row.end:
             # same as before, but this time for the end token
+            #
+            # In the case of multi tokens spans, we only care
+            # about the last one.
             row = partition_row_on_token(
-                row=row, token=eos_token, direction='before'
+                row=row, token=eos_token[-1], direction='before'
             )
 
         # in all other cases, the row is completely within
         rows_accumulator.append(row)
 
-    new_spans = list(chain.from_iterable(r.spans for r in rows_accumulator))
+    new_spans = chain.from_iterable(r.spans for r in rows_accumulator)
     type_ = getattr(block.box_group, 'type', None)
 
-    new_rows = SentenceRows(spans=new_spans, rows=rows_accumulator, type=type_)
+    new_rows = SentenceRows(spans=list(new_spans),
+                            rows=rows_accumulator,
+                            type=type_)
     new_rows.attach_doc(rows_accumulator[0].doc)
 
     return new_rows
