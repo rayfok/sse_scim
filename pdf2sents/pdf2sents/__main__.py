@@ -1,7 +1,7 @@
 
 import springs as sp
 
-from .visualization import visualize_typed_sentences
+from .visualization import TypedSentsViz
 from .make_output import write_sentences_to_json, write_all_to_json
 from .pipeline import Pipeline, PipelineConfig
 
@@ -17,10 +17,10 @@ class AppConfig:
 @sp.cli(AppConfig)
 def main(config: AppConfig):
     pipeline = Pipeline(config.pipeline)
-    doc = pipeline.run(config.src)
+    doc = pipeline(config.src)
 
     if config.mode == 'viz':
-        visualize_typed_sentences(doc, config.dst)
+        TypedSentsViz()(doc=doc, path=config.dst)
     elif config.mode == 'all':
         write_all_to_json(doc=doc, dst=config.dst)
     elif config.mode == 'sent':

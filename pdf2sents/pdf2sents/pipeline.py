@@ -80,7 +80,7 @@ class Pipeline:
             config.sents_type, TypedSentencesPredictor
         )
 
-    def run(self, input_path: Union[Path, str]) -> Document:
+    def __call__(self, input_path: Union[Path, str]) -> Document:
         src_path = Path(cached_path(input_path))
 
         doc = self.parser.parse(str(src_path))
