@@ -5,6 +5,7 @@ from mmda.predictors.base_predictors.base_predictor import BasePredictor
 from mmda.types.annotation import BoxGroup, SpanGroup, Annotation, Span
 from mmda.types.document import Document
 from mmda.types.names import Words, Sentences, Blocks
+import tqdm
 
 from .layout_tools import (
     intersect_span_groups,
@@ -50,6 +51,7 @@ class TypedBlockPredictor(BasePredictor):
     RefApp = 'ReferencesAppendix'
     Abstract = 'Abstract'
     Preamble = 'Preamble'
+    Caption = 'Caption'
 
     def _get_block_words(self,
                          doc: Document,
@@ -127,11 +129,41 @@ class TypedBlockPredictor(BasePredictor):
             if in_references:
                 block.type = self.RefApp
 
-    def _create_typed_blocks(self, doc: Document) -> Sequence[SpanGroup]:
+    def _tag_caption_blocks(self, doc: Document, blocks: List[SpanGroup]):
+        for block in blocks:
+            if (
+                block.box_group is not None and
+                # blocks that are tagged as either a title or a text
+                # are very likely to be captions
+                (block.box_group.type == self.Title
+                 or block.box_group.type == self.Text)
+            ):
+                # HEURISTIC: only look at the first 20 chars or so of the block
+                block_text = ' '.join(self._get_block_words(doc, block))[:20]
+
+                # HEURISTIC: look for either 'Figure' or 'Table' in the block
+                # text to determine if it is a caption
+                is_table_or_figure_caption = (
+                    re.match(r'^[Tt]able \d+[a-z]?\:', block_text)
+                    or re.match(r'^[Ff]igure \d+[a-z]?\:', block_text)
+                )
+
+                # TODO: after MMDA adds bold text to properties, consider
+                # checking for that too!
+
+                if is_table_or_figure_caption:
+                    block.type = self.Caption
+
+    def _create_typed_blocks(self, doc: Document) -> List[SpanGroup]:
         cur_blocks: List[SpanGroup] = getattr(doc, 'blocks', [])
         new_blocks: List[SpanGroup] = []
 
-        for block in cur_blocks:
+        for block in tqdm.tqdm(
+            cur_blocks,
+            desc='Typing blocks',
+            unit=' blocks',
+            unit_scale=True
+        ):
             block_type = None
 
             if len(block.spans) < 1 or block.box_group is None:
@@ -175,6 +207,7 @@ class TypedBlockPredictor(BasePredictor):
         typed_blocks = self._create_typed_blocks(document)
         self._tag_abstract_blocks(document, typed_blocks)
         self._tag_references_blocks(document, typed_blocks)
+        self._tag_caption_blocks(document, typed_blocks)
         return typed_blocks
 
 
@@ -186,6 +219,8 @@ class TypedSentencesPredictor(BasePredictor):
         TypedBlockPredictor.Text,
         TypedBlockPredictor.ListType,
         TypedBlockPredictor.Abstract,
+        TypedBlockPredictor.Caption,
+        TypedBlockPredictor.RefApp,
     }
     LAYOUT_TYPES: Set[str] = {
         TypedBlockPredictor.Title,
@@ -195,33 +230,22 @@ class TypedSentencesPredictor(BasePredictor):
     }
 
     def predict(self, document: Document) -> List[SpanGroup]:
-        # The logic here is as follows:
-        # 1. We iterate over each typed block.
-        # 2. For each typed block, we look at all sentences overlapping with
-        #    the block.
-        #      2a. Current typed block is a title, table, or figure; in that
-        #          case, we create the minimum sentence overlapping with the
-        #          block and add that to the typed sentences.
-        #      2b. If a sentence ends, but not starts in the current block, we
-        #          ignore it; a previous block already added it in the typed
-        #          sentences.
-        #             - An exception to this is if the sentence belongs to no
-        #               other blocks, and the current block is a Text, List, or
-        #               Abstract.
-        #      2c. If a sentence starts and ends in the current block we add it
-        #          to the typed sentences unless it has been added already.
-        #      2d. If a sentence starts and does not end in the current block,
-        #          we add it to the typed sentences assuming it is part of the
-        #          current block.
-        # 3. If a sentence belongs to no blocks, we add it to the typed
-        #    sentences with a type of Other.
+        """Given a document with typed_blocks and sentence annotations,
+        run a series of heuristics to assign type labels to individual
+        sentences, as well as split certain sentences that span across
+        multiple blocks.
 
+        Args:
+            document (Document): A document with typed_blocks and sentence
+                annotations.
+        """
+
+        # Typing annotations so that mypy does not freak out
         typed_block: SpanGroup
         sent: SpanGroup
-        typed_sents: List[SpanGroup] = []
 
-        # typed_sents_loc: Dict[int, int] = {}
-        # sentences_that_have_already_been_sliced: Set[Tuple[int, int]] = set()
+        # this is where we will accumulate the sentences with types
+        typed_sents: List[SpanGroup] = []
 
         # This dictionary contains the index of the last position a sentence
         # was sliced on; the key is a tuple of (start_of_unsliced,
@@ -229,7 +253,11 @@ class TypedSentencesPredictor(BasePredictor):
         # is the end position.
         typed_sents_ends: Dict[Tuple[int, int], int] = {}
 
-        print('\n\n\n')
+        prog = tqdm.tqdm(
+            desc='Typing sentences',
+            unit=' sent',
+            unit_scale=True
+        )
 
         for typed_block in document.typed_blocks:   # type: ignore
             is_content_block = typed_block.type in self.CONTENT_TYPES
@@ -256,16 +284,9 @@ class TypedSentencesPredictor(BasePredictor):
                     )
 
                     if add_to_typed_sentences:
+                        prog.update(1)
                         typed_sents_ends[key] = tight_sg.end
                         typed_sents.append(tight_sg)
-                        # sentences_that_have_already_been_sliced.add(
-                        #     (sent.start, sent.end)
-                        # )
-                        # print('1', tight_sg.type, tight_sg.start, tight_sg.end, tight_sg.text)
-
-                    # if tight_sg.start == 19009:
-                    #     import ipdb
-                    #     ipdb.set_trace()
                     # # # # # # END OF CASE 1 # # # # # #
 
                 elif sent.start < typed_block.start:
@@ -299,23 +320,11 @@ class TypedSentencesPredictor(BasePredictor):
                             id_=len(typed_sents)
                         )
                         if typed_sents_ends.get(key, -1) < tight_sg.end:
+                            prog.update(1)
                             typed_sents_ends[key] = tight_sg.end
                             typed_sents.append(tight_sg)
-                            # print('2a', tight_sg.type, tight_sg.start, tight_sg.end, tight_sg.text)
 
-                        # if tight_sg.start not in typed_sents_loc:
-                        #     typed_sents_loc[tight_sg.start] = tight_sg.end
-                        #     typed_sents.append(tight_sg)
-                        #     sentences_that_have_already_been_sliced.add(
-                        #         (sent.start, sent.end)
-                        #     )
-                        #     print('2', tight_sg.type, tight_sg.start, tight_sg.end, tight_sg.text)
-                        # # # # # # END OF CASE 2a # # # # # #
-
-                        # if (
-                        #     sent_key := (tight_sg.start, tight_sg.end)
-                        # ) not in typed_sents:
-                        #     typed_sents[sent_key] = tight_sg
+                        # # # # # # END OF CASE 2 # # # # # #
 
                 elif (key := (sent.start, sent.end)) not in typed_sents_ends:
                     # CASE 3: This sentence starts in the current block.
@@ -327,109 +336,25 @@ class TypedSentencesPredictor(BasePredictor):
                         document=document,
                         id_=len(typed_sents)
                     )
+                    prog.update(1)
                     typed_sents_ends[key] = new_sg.end
                     typed_sents.append(new_sg)
-                    # print('3', new_sg.type, new_sg.start, new_sg.end, new_sg.text)
+                    # # # # # # END OF CASE 3 # # # # # #
 
-        # import ipdb
-        # ipdb.set_trace()
+        # CASE 4: We finish by adding all sentences that are not part of
+        #         any block; these will be tagged with type 'Other'.
+        for sent in document.sents:     # type: ignore
+            if (sent_key := (sent.start, sent.end)) not in typed_sents_ends:
+                prog.update(1)
 
-        # for sent in document.sents:     # type: ignore
-        #     if (sent_key := (sent.start, sent.end)) not in typed_sents:
-        #         # case 3
-        #         typed_sents[sent_key] = make_typed_span_group(
-        #             spans=sent.spans,
-        #             document=document,
-        #             id_=len(typed_sents)
-        #         )
-        # typed_sentences_list = sorted(typed_sents.values(), key=lambda x: x.start)
-
-        # print('\n\n\n')
-
-        # import ipdb; ipdb.set_trace()
-
-        return typed_sents
-
-        ################################################################
-
-        # sent: SpanGroup
-        # for sent in document.sents:     # type: ignore
-
-        #     sent_extracted_spans: List[SpanGroup] = []
-        #     spans_seen_so_far: List[Span] = []
-
-        #     block: SpanGroup
-        #     for block in sent.typed_blocks:     # type: ignore
-        #         spans_inter = intersect_span_groups(sent, block)
-
-        #         new_sent_span_group = SpanGroup(
-        #             spans=spans_inter,
-        #             id=(typed_sents_cnt := typed_sents_cnt + 1),
-        #             type=block.type
-        #         )
-        #         new_sent_span_group.box_group = box_group_from_span_group(
-        #             span_group=new_sent_span_group, doc=document
-        #         )
-        #         new_sent_span_group.text = ' '.join(
-        #             str(word.text) for word in
-        #             document.find_overlapping(new_sent_span_group, Words)
-        #         )
-        #         import ipdb
-        #         ipdb.set_trace()
-
-        #         # sent_extracted_spans.append(
-
-        #         # )
-        #         spans_seen_so_far.extend(spans_inter)
-
-        #     # last step here is to add all sentences that are *not* part of
-        #     # any block. We do so by calling make_span_group_from_spans to
-        #     # get all segments that overlap with the spans seen so far, and
-        #     # then taking only the ones that are part of the source sentence.
-        #     segments = make_span_groups_segments(sent, spans_seen_so_far)
-        #     for segment in segments.src:
-        #         pass
-
-        ################################################################
-
-        #     sent_blocks_types: Set[Optional[str]] = \
-        #         set(b.type for b in sent.typed_blocks)  # type: ignore
-
-        #     if len(sent_blocks_types) <= 1:
-        #         sent_type = next(iter(sent_blocks_types), None)
-        #         typed_sents.append(
-        #             SpanGroup(
-        #                 spans=sent.spans,
-        #                 id=len(typed_sents),
-        #                 type=sent_type,
-        #                 text=' '.join(str(w.text) for w in sent.words),
-        #                 box_group=box_group_from_span_group(sent),
-        #             )
-        #         )
-        #     else:
-        #         cur_blocks: Iterable[SpanGroup] = \
-        #             sent.typed_blocks  # type: ignore
-
-        #         for block in cur_blocks:
-        #             new_spans = intersect_span_groups(sent, block)
-
-        #             new_sent = SpanGroup(
-        #                 spans=new_spans,
-        #                 id=len(typed_sents),
-        #                 type=block.type,
-        #             )
-        #             new_sent.text = ' '.join(
-        #                 str(w.text if w.text else '') for w in
-        #                 document.find_overlapping(new_sent, Words)
-        #             )
-        #             new_sent.box_group = box_group_from_span_group(
-        #                 new_sent, doc=document
-        #             )
-
-        #             typed_sents.append(new_sent)
-
-        #     print(' '.join(sent.symbols))
-        #     import ipdb
-        #     ipdb.set_trace()
+                new_sg = make_typed_span_group(
+                    spans=sent.spans,
+                    type_=TypedBlockPredictor.Other,
+                    document=document,
+                    id_=len(typed_sents)
+                )
+                typed_sents_ends[sent_key] = new_sg.end
+                typed_sents.append(new_sg)
+        # # # # # # END OF CASE 4 # # # # # #
 
         return typed_sents

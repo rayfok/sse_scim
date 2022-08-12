@@ -67,7 +67,9 @@ def visualize_typed_sentences(
                      TypedBlockPredictor.ListType: 'orange',
                      TypedBlockPredictor.Other: 'grey',
                      TypedBlockPredictor.RefApp: 'purple',
-                     TypedBlockPredictor.Abstract: 'magenta'}
+                     TypedBlockPredictor.Abstract: 'magenta',
+                     TypedBlockPredictor.Preamble: 'cyan',
+                     TypedBlockPredictor.Caption: 'pink'}
 
     if not(hasattr(doc, Pages) and
            hasattr(doc, TypedSentences) and
