@@ -1,5 +1,4 @@
 import bisect
-from collections import namedtuple
 from itertools import chain
 from typing import NamedTuple, Optional, Sequence, List, Dict, Union
 
@@ -136,7 +135,6 @@ def difference_span_groups(
     diff_spans = []
     for src_span in src:
         for dst_span in dst:
-
 
             # check if there is an overlap between the two spans
             if (

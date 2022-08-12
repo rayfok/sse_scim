@@ -63,6 +63,7 @@ class TypedBlockPredictor(BasePredictor):
         in_abstract = False
         abstract_position = -1
         for i, block in enumerate(blocks):
+            skip_block = False
             if (
                 block.box_group is not None
                 and block.box_group.type == self.Title
@@ -80,10 +81,14 @@ class TypedBlockPredictor(BasePredictor):
                     abstract_position = i
                     in_abstract = True
 
-            if in_abstract:
+                    # We skip the actual title of the abstract section,
+                    # which should just be "Abstract"
+                    skip_block = True
+
+            if in_abstract and not skip_block:
                 block.type = self.Abstract
 
-        # mark everything before first abstract
+        # mark everything before first abstract as preamble
         if abstract_position > 0:
             for block in blocks[:abstract_position]:
                 block.type = self.Preamble
@@ -108,6 +113,8 @@ class TypedBlockPredictor(BasePredictor):
     ) -> None:
         in_references = False
         for block in blocks:
+            skip_block = False
+
             if (
                 block.box_group is not None and (
                     block.box_group.type == self.Title
@@ -126,7 +133,12 @@ class TypedBlockPredictor(BasePredictor):
                 if 'references' in sec_type[:20]:
                     in_references = True
 
-            if in_references:
+                    if block.box_group.type == self.Title:
+                        # We skip the actual title of the references section,
+                        # which should just be "References"
+                        skip_block = True
+
+            if in_references and not skip_block:
                 block.type = self.RefApp
 
     def _tag_caption_blocks(self, doc: Document, blocks: List[SpanGroup]):
