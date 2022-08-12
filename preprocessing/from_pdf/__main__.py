@@ -16,10 +16,8 @@ import springs as sp
 
 from .typed_predictors import TypedBlockPredictor, TypedSentencesPredictor
 from .word_predictors import ExtendedDictionaryWordPredictor
-from .visualization import visualize_typed_sentences    # noqa: F401
-
-
-WORDS_URL = 'https://github.com/dwyl/english-words/raw/master/words.txt'
+from .visualization import visualize_typed_sentences
+from .make_output import write_sentences_to_json, write_all_to_json
 
 
 @sp.make_flexy
@@ -47,7 +45,9 @@ class PipelineConfig:
     words: PipelineStepConfig = sp.flexy_field(
         PipelineStepConfig,
         _target_=sp.Target.to_string(ExtendedDictionaryWordPredictor),
-        dictionary_file_path=str(cached_path(WORDS_URL))
+        dictionary_file_path=str(cached_path(
+            'https://github.com/dwyl/english-words/raw/master/words.txt'
+        ))
     )
     blocks_type: PipelineStepConfig = PipelineStepConfig(
         _target_=sp.Target.to_string(TypedBlockPredictor)
@@ -62,11 +62,12 @@ class AppConfig:
     pipeline: PipelineConfig = PipelineConfig()
     src: str = sp.MISSING
     dst: str = sp.MISSING
+    mode: str = sp.MISSING
 
 
 @sp.cli(AppConfig)
 def main(config: AppConfig):
-    path = Path(cached_path(config.src))
+    src_path = Path(cached_path(config.src))
 
     parser = sp.init.now(config.pipeline.parser,
                          PDFPlumberParser)
@@ -83,8 +84,8 @@ def main(config: AppConfig):
     sents_type_pred = sp.init.now(config.pipeline.sents_type,
                                   TypedSentencesPredictor)
 
-    doc = parser.parse(str(path))
-    images = rasterizer.rasterize(str(path), dpi=72)
+    doc = parser.parse(str(src_path))
+    images = rasterizer.rasterize(str(src_path), dpi=72)
     doc.annotate_images(images)
 
     with torch.no_grad(), warnings.catch_warnings():
@@ -109,7 +110,14 @@ def main(config: AppConfig):
     typed_sents = sents_type_pred.predict(doc)
     doc.annotate(typed_sents=typed_sents)
 
-    visualize_typed_sentences(doc, config.dst)
+    if config.mode == 'viz':
+        visualize_typed_sentences(doc, config.dst)
+    elif config.mode == 'all':
+        write_all_to_json(doc=doc, dst=config.dst)
+    elif config.mode == 'sent':
+        write_sentences_to_json(doc=doc, dst=config.dst, src=config.src)
+    else:
+        raise ValueError(f"Invalid mode: {config.mode}")
 
 
 if __name__ == '__main__':

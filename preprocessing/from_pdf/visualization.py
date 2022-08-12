@@ -1,9 +1,14 @@
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
+from PIL.Image import Image as PILImage
 
 from mmda.types.annotation import SpanGroup
 
-import layoutparser as lp
+from layoutparser.elements.layout_elements import (
+    TextBlock,
+    Rectangle
+)
+from layoutparser.visualization import draw_box
 
 from mmda.types.document import Document
 from mmda.types.names import Images, Pages
@@ -11,8 +16,17 @@ from mmda.types.names import Images, Pages
 from .types import TypedSentences
 
 
+def get_span_group_type(span_group: SpanGroup) -> Union[str, None]:
+    if span_group.type is not None:
+        return span_group.type
+    elif span_group.box_group is not None:
+        return span_group.box_group.type
+    else:
+        return None
+
+
 def draw_blocks(
-    image,
+    image: PILImage,
     doc_spans: List[SpanGroup],
     pid=None,
     color_map=None,
@@ -23,23 +37,23 @@ def draw_blocks(
 
     w, h = image.size
     layout = [
-        lp.TextBlock(
-            lp.Rectangle(
+        TextBlock(
+            Rectangle(
                 *box
                 .get_absolute(page_height=h, page_width=w)
                 .coordinates
             ),
-            type=(span.type or span.box_group.type),
+            type=get_span_group_type(span),
             text=(doc_spans[0].text or ' '.join(span.symbols)),
         )
         for span in doc_spans
-        for box in span.box_group.boxes
+        for box in getattr(span.box_group, 'boxes', [])
         if (box.page == pid if pid is not None else True)
     ]
 
-    return lp.draw_box(
+    return draw_box(
         image,
-        layout,
+        layout,      # type: ignore
         color_map=color_map,
         box_color='grey' if not color_map else None,
         box_width=token_boundary_width,
@@ -57,7 +71,6 @@ def visualize_typed_sentences(
     from .typed_predictors import TypedBlockPredictor
 
     path = Path(path)
-    # label_fn = label_fn or (label_fn x: x.type)
 
     if color_map is None:
         color_map = {TypedBlockPredictor.Title: 'red',
@@ -77,9 +90,12 @@ def visualize_typed_sentences(
         raise ValueError(f'Document must have `{Pages}`, `{Images}` and '
                          f'`{TypedSentences}` annotations!')
 
-    for pid in range(len(doc.pages)):
-        viz = draw_blocks(doc.images[pid],
-                          getattr(doc.pages[pid], attr),
+    pages: List[SpanGroup] = getattr(doc, 'pages', [])
+    images: List[PILImage] = getattr(doc, 'images', [])
+
+    for pid in range(len(pages)):
+        viz = draw_blocks(images[pid],
+                          getattr(pages[pid], attr),
                           pid=pid,
                           color_map=color_map,
                           alpha=0.3)
