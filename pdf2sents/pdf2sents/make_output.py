@@ -1,8 +1,9 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
+from uuid import uuid4
 
 
 from mmda.types.document import Document
@@ -49,6 +50,22 @@ class PaperSentences:
         self.types.append(type)
         self.senid.append(senid)
 
+    @classmethod
+    def from_document(
+        cls,
+        doc: Document,
+        docid: Optional[str] = None
+    ) -> 'PaperSentences':
+
+        docid = docid or uuid4().hex
+        content = cls(docid=docid)
+
+        for sent in doc.typed_sents:    # type: ignore
+            content.add_sentence(
+                text=sent.text, type=sent.type, senid=sent.id   # type: ignore
+            )
+        return content
+
 
 def write_sentences_to_json(
     src: Union[Path, str],
@@ -68,12 +85,7 @@ def write_sentences_to_json(
                 if paper_sentences.docid != sha:
                     data.append(paper_sentences)
 
-    current_doc = PaperSentences(docid=sha)
-    for sent in doc.typed_sents:    # type: ignore
-        current_doc.add_sentence(
-            text=sent.text, type=sent.type, senid=sent.id   # type: ignore
-        )
-    data.append(current_doc)
+    data.append(PaperSentences.from_document(doc=doc, docid=sha))
 
     with open(dst, 'w') as f:
         for paper_sentences in data:
