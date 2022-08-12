@@ -1,0 +1,14 @@
+pytorch-lightning==1.7.0
+torchmetrics==0.9.3
+datasets==2.4.0
+transformers==4.21.1
+# torchdata==0.4.0
+
+s3fs>=2022.2.0
+untangle>=1.1.0
+springs>=1.2.5
+boto3
+py7zr>=0.18.1
+beautifulsoup4>=4.11.1
+lxml>=4.8.0
+smashed>=0.1.6

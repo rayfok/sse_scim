@@ -1,0 +1,13 @@
+layoutparser
+torch
+torchvision
+effdet
+
+git+https://github.com/allenai/mmda@lucas/scim#egg=mmda
+mmda==0.0.22
+
+springs>=1.2.5.3
+
+cached_path>=0.11
+
+pysbd>=0.3.4
