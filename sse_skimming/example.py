@@ -14,6 +14,28 @@ from cached_path import cached_path
 import springs as sp
 
 
+class OpacityCalculator:
+    def __init__(
+        self,
+        max_opacity: float,
+        min_opacity: float,
+        threshold: float,
+    ):
+        self.max_opacity = max_opacity
+        self.threshold = threshold
+        self.min_opacity = min_opacity
+
+    def __call__(self, score: float):
+        if score < self.threshold:
+            return 0
+
+        # normalize score to [0, 1]
+        score = (score - self.threshold) / (1 - self.threshold)
+
+        # scale to [min_opacity, max_opacity]
+        return self.min_opacity + score * (self.max_opacity - self.min_opacity)
+
+
 @dataclass
 class PipelineObjConfig:
     _target_: str = sp.Target.to_string(Pipeline)
@@ -35,9 +57,17 @@ class PredictorObjConfig:
         )
     )
 
+@dataclass
+class OpacityCalculatorConfig:
+    _target_: str = sp.Target.to_string(OpacityCalculator)
+    threshold: float = 0.7
+    max_opacity: float = 0.4
+    min_opacity: float = 0.1
+
 
 @dataclass
 class VizConfig:
+    _target_: str = sp.Target.to_string(VizAny)
     color_map: Dict[str, str] = field(default_factory=lambda: {
             'background': 'green',
             'method': 'blue',
@@ -45,8 +75,7 @@ class VizConfig:
             'other': 'grey',
             'result': 'yellow',
         })
-    threshold: float = 0.6
-    max_opacity: float = 0.4
+
 
 
 @dataclass
@@ -61,10 +90,8 @@ class SSESkimmingConfig:
                                  TypedBlockPredictor.ListType]
     )
     viz: VizConfig = VizConfig()
+    opacity: OpacityCalculatorConfig = OpacityCalculatorConfig()
 
-
-def get_opacity(max_opacity: float, score: float, threshold: float) -> float:
-    return max_opacity * (1 - (score - threshold) / (1 - threshold))
 
 
 @sp.cli(SSESkimmingConfig)
@@ -83,25 +110,23 @@ def main(config: SSESkimmingConfig):
 
     predictions = predictor.predict_one(to_predict)
 
+    opacity_calculator = sp.init.now(config.opacity, OpacityCalculator)
     to_visualize = []
-    label_opacity = []
+    labels_opacity = []
     for sent, pred in zip(ref_sents, predictions):
         label, score = max(pred.items(), key=lambda x: x[1])
-        if score > config.viz.threshold:
+        sent_opacity = opacity_calculator(score)
+        if sent_opacity > 0:
             sent = deepcopy(sent)
             sent.type = label
             to_visualize.append(sent)
-            label_opacity.append(
-                get_opacity(max_opacity=config.viz.max_opacity,
-                            score=score,
-                            threshold=config.viz.threshold)
-            )
+            labels_opacity.append(sent_opacity)
 
-    viz = VizAny(color_map=config.viz.color_map)
+    viz = sp.init.now(config.viz, VizAny)
     viz(doc=doc,
         path=config.dst or Path(config.src).with_suffix('.png'),
         spans=to_visualize,
-        opacity=label_opacity)
+        opacity=labels_opacity)
 
 
 if __name__ == '__main__':
