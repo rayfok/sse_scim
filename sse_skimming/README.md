@@ -18,3 +18,7 @@ python example.py \
     src=path/to/file.pdf \
     dst=path/to/output/dir/for/visualization
 ```
+
+For example, if ran with the [Longchecker pdf](https://arxiv.org/pdf/2112.01640v1), it should return the following outut:
+
+![Image of the output for the longchecker PDF](longchecker.png)
