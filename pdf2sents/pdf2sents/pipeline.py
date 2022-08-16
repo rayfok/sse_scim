@@ -81,6 +81,9 @@ class Pipeline:
         )
 
     def __call__(self, input_path: Union[Path, str]) -> Document:
+        return self.run(input_path)
+
+    def run(self, input_path: Union[Path, str]) -> Document:
         src_path = Path(cached_path(input_path))
 
         doc = self.parser.parse(str(src_path))
