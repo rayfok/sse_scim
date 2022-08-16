@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Sequence, TypedDict
+from typing import Dict, List
 
 
 from transformers.modeling_utils import PreTrainedModel
@@ -128,7 +128,7 @@ class Predictor:
         Leverage your underlying model to perform this inference.
         """
         samples = self.parser.map([instance])
-        predictions = []
+        predictions: List[Dict[str, float]] = []
 
         # prediction = Prediction()
         with torch.no_grad():

@@ -57,6 +57,7 @@ class PredictorObjConfig:
         )
     )
 
+
 @dataclass
 class OpacityCalculatorConfig:
     _target_: str = sp.Target.to_string(OpacityCalculator)
@@ -77,7 +78,6 @@ class VizConfig:
         })
 
 
-
 @dataclass
 class SSESkimmingConfig:
     pipeline: PipelineObjConfig = PipelineObjConfig()
@@ -93,23 +93,32 @@ class SSESkimmingConfig:
     opacity: OpacityCalculatorConfig = OpacityCalculatorConfig()
 
 
-
 @sp.cli(SSESkimmingConfig)
 def main(config: SSESkimmingConfig):
+    # Pipeline is responsible for parsing pdfs, while the predictor
+    # predicts the label for each sentence.
     pipeline = sp.init.now(config.pipeline, Pipeline)
     predictor = sp.init.now(config.predictor, Predictor)
 
+    # this returns an mmda object annotated with sentence
     doc = pipeline.run(config.src)
 
-    to_predict = {'text': []}
+    # we only call the predictor on sentences that are of type in
+    # config.valid_types; by default, this is main blocks of text and
+    # lists.
+    to_predict: Dict[str, List[str]] = {'text': []}
     ref_sents = []
     for sent in doc.typed_sents:    # type: ignore
         if sent.type in config.valid_types:
             to_predict['text'].append(sent.text)
             ref_sents.append(sent)
 
+    # get predictions for this document
     predictions = predictor.predict_one(to_predict)
 
+    # we get the labels and probabilities for each sentence
+    # here; the opacity_calculator returns a score > 0 if the
+    # sentence is relevant, and 0 otherwise.
     opacity_calculator = sp.init.now(config.opacity, OpacityCalculator)
     to_visualize = []
     labels_opacity = []
@@ -122,6 +131,7 @@ def main(config: SSESkimmingConfig):
             to_visualize.append(sent)
             labels_opacity.append(sent_opacity)
 
+    # visualize the sentences
     viz = sp.init.now(config.viz, VizAny)
     viz(doc=doc,
         path=config.dst or Path(config.src).with_suffix('.png'),
