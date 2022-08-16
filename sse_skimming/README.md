@@ -14,7 +14,7 @@ poetry install
 
 
 ```bash
-python example.py \
+python -m sse_skimming \
     src=path/to/file.pdf \
     dst=path/to/output/dir/for/visualization
 ```
