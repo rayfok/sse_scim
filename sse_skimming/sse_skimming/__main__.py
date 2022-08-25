@@ -120,8 +120,6 @@ def main(config: SSESkimmingConfig):
         if sent.type in config.valid_types:
             to_predict["text"].append(clean_sentence(sent.text))
             ref_sents.append(sent)
-            print(sent)
-            print()
 
         # We map each sentence/spangroup to an enclosing block based on their start spans
         for block_span_range in block_to_sents.keys():
@@ -131,10 +129,15 @@ def main(config: SSESkimmingConfig):
                 sent.block_uuid = block_uuid
                 break
 
+    # assign sections to sentences
+    sent_sect_map = assign_sections_to_sentences(doc.typed_sents)
+    for sent in ref_sents:
+        sent.section = sent_sect_map[sent.text]
+
     # get predictions for this document
     predictions = predictor.predict_one(to_predict)
 
-    # Classify sentences for "novelty"
+    # classify sentences for "novelty"
     novelty_predictions = classify_novelty(ref_sents)
 
     # we get the labels and probabilities for each sentence
@@ -146,9 +149,11 @@ def main(config: SSESkimmingConfig):
         pred = {k: round(v, 5) for k, v in pred.items()}
         label, score = max(pred.items(), key=lambda x: x[1])
         sent_opacity = opacity_calculator(score)
+
         labeled_sent = {
             "id": sent.id,
             "text": clean_sentence(sent.text),
+            "section": sent.section,
             "pred": pred,
             "label": label,
             "score": score,
@@ -164,12 +169,18 @@ def main(config: SSESkimmingConfig):
             ],
             "block_id": sent.block_uuid
         }
+
         if novelty_predictions[sent.id]:
             labeled_sent["label"] = "novelty"
             labeled_sent["score"] = 1
             labeled_sent["pred"]["novelty"] = 1
             sents.append(labeled_sent)
         elif sent_opacity > 0 and label not in ["background", "other"]:
+            # don't return method or results is classified in related work section
+            rw_kws = ["related work", "related works", "recent work", "recent works", "background"]
+            if label in ["method", "result"] and any(rw_kw in sent.section.lower() for rw_kw in rw_kws):
+                continue
+
             sents.append(labeled_sent)
 
 
