@@ -7,32 +7,135 @@ from spacy.symbols import VERB
 
 nlp = spacy.load("en_core_web_sm")
 
+NOVELTY_KWS = {
+    "categorize",
+    "categorise",
+    "formalize",
+    "hypothesize",
+    "propose",
+    "posit",
+    "develop",
+    "benchmark",
+    "augment",
+    "demonstrate",
+    "explore",
+    "extend",
+    "emphasize",
+    "solve",
+    "investigate",
+    "summarize",
+    "uncover",
+    "rethink",
+    "speculate",
+    "motivate",
+    "extend",
+    "differ",
+    "contrast",
+    "new",
+    "novel",
+}
+
+CONTRIBUTION_KWS = {"contribution", "contributions", "contribute"}
+
+METHOD_KWS = {}
+
+RESULT_KWS = {
+    "find",
+    "show",
+    "reveal",
+    "highlight",
+    "achieve",
+    "obtain",
+    "exceed",
+    "outperform",
+    "surpass",
+}
+
+OBJECTIVE_KWS = {"aim", "goal", "purpose", "motivation", "objective"}
+
+
 def classify_novelty(ref_sents):
-    novelty_verbs = {"categorize", "categorise" "formalize", "hypothesize", "propose", "posit", "contribute", "develop", "benchmark", "augment", "demonstrate", "explore", "extend", "emphasize", "solve", "investigate", "summarize", "uncover", "rethink", "speculate", "motivate", "extend"}
-    novelty_nouns = {"new", "novel", "differ", "contrast"}
-    contribution_nouns = {"contribution", "contributions"}
-    novelty_predictions = defaultdict(lambda: False)
+    novelty_predictions = set()
     for sent in ref_sents:
         page = sent.box_group.boxes[0].page
-        tokens = [t.lower() for t in clean_sentence(sent.text).split()]
         doc = nlp(sent.text)
         for token in doc:
-            if any(kw in tokens for kw in ["we", "us", "our"]):
-                if (token.pos_ == VERB and token.lemma_ in novelty_verbs) or token.lemma_ in novelty_nouns:
-                    novelty_predictions[sent.id] = True
-                    break
-
-            if token.lemma_ in contribution_nouns and page <= 2:
-                novelty_predictions[sent.id] = True
+            if (
+                token.lemma_ in NOVELTY_KWS
+                and sentence_has_author_intent(sent)
+                and is_sentence_in_section(
+                    sent,
+                    [
+                        "abstract",
+                        "introduction",
+                        "related work",
+                        "recent work",
+                        "conclusion",
+                    ],
+                )
+            ):
+                novelty_predictions.add(sent.id)
+                break
+            if token.lemma_ in CONTRIBUTION_KWS and page <= 2:
+                novelty_predictions.add(sent.id)
                 break
     return novelty_predictions
 
 
+def classify_method(ref_sents):
+    method_predictions = set()
+    for sent in ref_sents:
+        doc = nlp(sent.text)
+        if sentence_has_author_intent(sent) and is_sentence_in_section(
+            sent, ["abstract", "introduction", "method", "approach"]
+        ):
+            for token in doc:
+                if token.lemma_ in METHOD_KWS:
+                    method_predictions.add(sent.id)
+                    break
+    return method_predictions
+
+
+def classify_result(ref_sents):
+    result_predictions = set()
+    for sent in ref_sents:
+        doc = nlp(sent.text)
+        if (
+            sentence_has_author_intent(sent)
+            and is_sentence_in_section(sent, ["abstract", "introduction", "conclusion"])
+        ) or is_sentence_in_section(sent, ["result", "experiment"]):
+            for token in doc:
+                if token.lemma_ in RESULT_KWS:
+                    result_predictions.add(sent.id)
+                    break
+    return result_predictions
+
+
+def classify_objective(ref_sents):
+    objective_predictions = set()
+    for sent in ref_sents:
+        doc = nlp(sent.text)
+        if sentence_has_author_intent(sent) and is_sentence_in_section(
+            sent, ["abstract", "introduction", "conclusion"]
+        ):
+            for token in doc:
+                if token.text in OBJECTIVE_KWS:
+                    objective_predictions.add(sent.id)
+                    break
+    return objective_predictions
+
+
+def is_sentence_in_section(sentence, sections):
+    return any(section in sentence.section.lower() for section in sections)
+
+
 def assign_sections_to_sentences(sents):
     sent_sect_map = {}
-    sent_fields = [TypedBlockPredictor.Text,
+    sent_fields = [
+        TypedBlockPredictor.Text,
         TypedBlockPredictor.ListType,
-        TypedBlockPredictor.Abstract]
+        TypedBlockPredictor.Abstract,
+    ]
     sect_fields = [TypedBlockPredictor.Title]
     sents = [s for s in sents if s.type in sent_fields + sect_fields]
     sents = sorted(sents, key=lambda x: x.spans[0].start)
@@ -78,3 +181,18 @@ def clean_sentence(sentence):
     cleaned = cleaned.decode()
     cleaned = cleaned.replace("- ", "")
     return cleaned
+
+
+def sentence_has_author_intent(sentence):
+    author_intent_tokens = ["we", "us", "our"]
+    tokens = clean_sentence(sentence.text).lower().split()
+    return any(t in tokens for t in author_intent_tokens)
+
+
+def extract_verbs(sentence):
+    verbs = []
+    doc = nlp(sentence.text)
+    for token in doc:
+        if token.pos == VERB:
+            verbs.append(token.lemma_)
+    return verbs

@@ -2,8 +2,9 @@ import json
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field
+from email.policy import default
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Type
 
 import springs as sp
 from cached_path import cached_path
@@ -59,7 +60,7 @@ class PredictorObjConfig:
 @dataclass
 class OpacityCalculatorConfig:
     _target_: str = sp.Target.to_string(OpacityCalculator)
-    threshold: float = 0.7
+    threshold: float = 0.75
     max_opacity: float = 0.4
     min_opacity: float = 0.1
 
@@ -116,15 +117,35 @@ def main(config: SSESkimmingConfig):
     # lists.
     to_predict: Dict[str, List[str]] = {"text": []}
     ref_sents = []
+
+    # if os.path.exists("author_verbs.txt"):
+    #     with open("author_verbs.txt", "r") as f:
+    #         verbs = {line.strip() for line in f}
+    # else:
+    #     verbs = set()
+    # for sent in doc.typed_sents:
+    #     sent.text = clean_sentence(sent.text)
+    #     if sent.type in config.valid_types:
+    #         if sentence_has_author_intent(sent):
+    #             verbs.update(set(extract_verbs(sent)))
+    # with open("author_verbs.txt", "w") as out:
+    #     for verb in sorted(list(verbs)):
+    #         out.write(verb + "\n")
+    # return
+
     for sent in doc.typed_sents:  # type: ignore
         if sent.type in config.valid_types:
+            # Sometimes the layout parser fails and grabs a giant blob of text as a sentence. Skip these.
+            if len(sent.text) > 300:
+                continue
+
             to_predict["text"].append(clean_sentence(sent.text))
             ref_sents.append(sent)
 
         # We map each sentence/spangroup to an enclosing block based on their start spans
         for block_span_range in block_to_sents.keys():
             block_span_start, block_span_end, block_uuid = block_span_range
-            if sent.spans[0].start >= block_span_start:
+            if sent.spans[0].start <= block_span_end:
                 block_to_sents[block_span_range].append(sent)
                 sent.block_uuid = block_uuid
                 break
@@ -134,17 +155,24 @@ def main(config: SSESkimmingConfig):
     for sent in ref_sents:
         sent.section = sent_sect_map[sent.text]
 
-    # get predictions for this document
+    # get trained model predictions for this document
     predictions = predictor.predict_one(to_predict)
 
     # classify sentences for "novelty"
     novelty_predictions = classify_novelty(ref_sents)
+
+    # classify sentences for "result"
+    result_predictions = classify_result(ref_sents)
+
+    # classify sentences for "objective"
+    objective_predictions = classify_objective(ref_sents)
 
     # we get the labels and probabilities for each sentence
     # here; the opacity_calculator returns a score > 0 if the
     # sentence is relevant, and 0 otherwise.
     opacity_calculator = sp.init.now(config.opacity, OpacityCalculator)
     sents = []
+    added_blocks = defaultdict(set)  # facet: block_ids
     for sent, pred in zip(ref_sents, predictions):
         pred = {k: round(v, 5) for k, v in pred.items()}
         label, score = max(pred.items(), key=lambda x: x[1])
@@ -167,22 +195,60 @@ def main(config: SSESkimmingConfig):
                 }
                 for box in sent.box_group.boxes
             ],
-            "block_id": sent.block_uuid
+            "block_id": sent.block_uuid,
         }
 
-        if novelty_predictions[sent.id]:
+        if sent.id in objective_predictions:
+            labeled_sent["label"] = "objective"
+            labeled_sent["score"] = 1
+            labeled_sent["pred"]["objective"] = 1
+            sents.append(labeled_sent)
+        elif sent.id in novelty_predictions:
             labeled_sent["label"] = "novelty"
             labeled_sent["score"] = 1
             labeled_sent["pred"]["novelty"] = 1
             sents.append(labeled_sent)
+        elif sent.id in result_predictions:
+            # limit heuristic result predictions to one per block
+            if sent.block_uuid not in added_blocks["result"]:
+                labeled_sent["label"] = "result"
+                labeled_sent["score"] = 1
+                labeled_sent["pred"]["result"] = 1
+                added_blocks["result"].add(sent.block_uuid)
+                sents.append(labeled_sent)
+
         elif sent_opacity > 0 and label not in ["background", "other"]:
-            # don't return method or results is classified in related work section
-            rw_kws = ["related work", "related works", "recent work", "recent works", "background"]
-            if label in ["method", "result"] and any(rw_kw in sent.section.lower() for rw_kw in rw_kws):
+            # don't return method or results related work section
+            rw_kws = [
+                "related work",
+                "related works",
+                "recent work",
+                "recent works",
+                "background",
+            ]
+            if label in ["method", "result"] and any(
+                kw in sent.section.lower() for kw in rw_kws
+            ):
                 continue
 
-            sents.append(labeled_sent)
+            # don't return results in method section
+            method_kws = ["method", "approach"]
+            if label in ["result"] and any(
+                kw in sent.section.lower() for kw in method_kws
+            ):
+                continue
 
+            # don't return methods in result section
+            result_kws = ["result"]
+            if label in ["method"] and any(
+                kw in sent.section.lower() for kw in result_kws
+            ):
+                continue
+
+            # Limit model predictions to one per block
+            if sent.block_uuid not in added_blocks["model"]:
+                sents.append(labeled_sent)
+                added_blocks["model"].add(sent.block_uuid)
 
     OUTPUT_DIR = "output"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
