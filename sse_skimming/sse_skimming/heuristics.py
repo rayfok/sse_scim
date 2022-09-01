@@ -5,124 +5,65 @@ import spacy
 from pdf2sents.typed_predictors import TypedBlockPredictor
 from spacy.symbols import VERB
 
+from sse_skimming.word_bank import *
+
 nlp = spacy.load("en_core_web_sm")
 
-NOVELTY_KWS = {
-    "categorize",
-    "categorise",
-    "formalize",
-    "hypothesize",
-    "propose",
-    "posit",
-    "develop",
-    "benchmark",
-    "augment",
-    "demonstrate",
-    "explore",
-    "extend",
-    "emphasize",
-    "solve",
-    "investigate",
-    "summarize",
-    "uncover",
-    "rethink",
-    "speculate",
-    "motivate",
-    "extend",
-    "differ",
-    "contrast",
-    "new",
-    "novel",
-}
 
-CONTRIBUTION_KWS = {"contribution", "contributions", "contribute"}
-
-METHOD_KWS = {}
-
-RESULT_KWS = {
-    "find",
-    "show",
-    "reveal",
-    "highlight",
-    "achieve",
-    "obtain",
-    "exceed",
-    "outperform",
-    "surpass",
-}
-
-OBJECTIVE_KWS = {"aim", "goal", "purpose", "motivation", "objective"}
+def sentence_has_author_intent(sent):
+    return re.search(r"(?=\b(" + "|".join(AUTHOR_KWS) + r")\b)", sent.text.lower())
 
 
-def classify_novelty(ref_sents):
-    novelty_predictions = set()
-    for sent in ref_sents:
-        page = sent.box_group.boxes[0].page
-        doc = nlp(sent.text)
-        for token in doc:
-            if (
-                token.lemma_ in NOVELTY_KWS
-                and sentence_has_author_intent(sent)
-                and is_sentence_in_section(
-                    sent,
-                    [
-                        "abstract",
-                        "introduction",
-                        "related work",
-                        "recent work",
-                        "conclusion",
-                    ],
-                )
-            ):
-                novelty_predictions.add(sent.id)
-                break
-            if token.lemma_ in CONTRIBUTION_KWS and page <= 2:
-                novelty_predictions.add(sent.id)
-                break
-    return novelty_predictions
-
-
-def classify_method(ref_sents):
-    method_predictions = set()
-    for sent in ref_sents:
-        doc = nlp(sent.text)
-        if sentence_has_author_intent(sent) and is_sentence_in_section(
-            sent, ["abstract", "introduction", "method", "approach"]
+def sent_contains_novelty(sent):
+    for token in nlp(sent.text):
+        if token.lemma_ in NOVELTY_KWS and is_sentence_in_section(
+            sent,
+            ["abstract", "introduction", "related work", "recent work", "conclusion"],
         ):
-            for token in doc:
-                if token.lemma_ in METHOD_KWS:
-                    method_predictions.add(sent.id)
-                    break
-    return method_predictions
+            return True
+    return False
 
 
-def classify_result(ref_sents):
-    result_predictions = set()
-    for sent in ref_sents:
-        doc = nlp(sent.text)
-        if (
-            sentence_has_author_intent(sent)
-            and is_sentence_in_section(sent, ["abstract", "introduction", "conclusion"])
-        ) or is_sentence_in_section(sent, ["result", "experiment"]):
-            for token in doc:
-                if token.lemma_ in RESULT_KWS:
-                    result_predictions.add(sent.id)
-                    break
-    return result_predictions
+def sent_contains_objective(sent):
+    for token in nlp(sent.text):
+        if token.lemma_ in OBJECTIVE_KWS and is_sentence_in_section(
+            sent,
+            ["abstract", "introduction", "related work", "recent work", "conclusion"],
+        ):
+            return True
+    return False
 
 
-def classify_objective(ref_sents):
-    objective_predictions = set()
-    for sent in ref_sents:
-        doc = nlp(sent.text)
-        if sentence_has_author_intent(sent) and is_sentence_in_section(
+def sent_contains_contribution(sent):
+    for token in nlp(sent.text):
+        if token.lemma_ in CONTRIBUTION_KWS and is_sentence_in_section(
             sent, ["abstract", "introduction", "conclusion"]
         ):
-            for token in doc:
-                if token.text in OBJECTIVE_KWS:
-                    objective_predictions.add(sent.id)
-                    break
-    return objective_predictions
+            return True
+    return False
+
+
+def sent_contains_result(sent):
+    for token in nlp(sent.text):
+        if token.lemma_ in RESULT_KWS:
+            return True
+    return False
+
+
+def classify_novelty_batch(ref_sents):
+    return {s.id for s in ref_sents if sent_contains_novelty(s)}
+
+
+def classify_objective_batch(ref_sents):
+    return {s.id for s in ref_sents if sent_contains_objective(s)}
+
+
+def classify_method_batch(ref_sents):
+    pass
+
+
+def classify_result_batch(ref_sents):
+    return {s.id for s in ref_sents if sent_contains_result(s)}
 
 
 def is_sentence_in_section(sentence, sections):
@@ -130,7 +71,7 @@ def is_sentence_in_section(sentence, sections):
 
 
 def assign_sections_to_sentences(sents):
-    sent_sect_map = {}
+    sent_by_id = {s.id: s for s in sents}
     sent_fields = [
         TypedBlockPredictor.Text,
         TypedBlockPredictor.ListType,
@@ -139,37 +80,68 @@ def assign_sections_to_sentences(sents):
     sect_fields = [TypedBlockPredictor.Title]
     sents = [s for s in sents if s.type in sent_fields + sect_fields]
     sents = sorted(sents, key=lambda x: x.spans[0].start)
+    sent_sect_map = {}
+    sent_span_map = {}  # map sentence to starting span location
+    sect_box_map = {}  # map section to first bbox location
 
-    all_sections = {}  # { <section number>: <section text> }
-    current_section = ""
-    for x in sents:
-        if x.type in sent_fields:
-            sent_sect_map[x.text] = current_section
+    sections = {}  # map section number to section header text
+    current_section = "Abstract"
+    for sent in sents:
+        if sent.type in sent_fields:
+            sent_sect_map[sent.id] = current_section
         else:
-            current_section = x.text
+            current_section = sent.text
             match = re.search(r"[-+]?\d*\.\d+|\d+", current_section)
             if match:
                 sect_number = match.group()
-                all_sections[sect_number] = current_section
+                sections[sect_number] = current_section
+            sect_box_map[current_section] = sent.box_group.boxes[0]
+        sent_span_map[sent.id] = sent.spans[0].start
 
-    for sent, sect in sent_sect_map.items():
+    for sent_id, sect in sent_sect_map.items():
         match = re.search(r"[-+]?\d*\.\d+|\d+", sect)
         if match:
             sect_number = match.group()
             sect_number_parts = sect_number.split(".")
 
             if len(sect_number_parts) == 3:
-                first_level_header = all_sections.get(sect_number_parts[0], "")
-                second_level_header = all_sections.get(
-                    ".".join(sect_number_parts[:2]), ""
-                )
+                first_level_header = sections.get(sect_number_parts[0], "")
+                second_level_header = sections.get(".".join(sect_number_parts[:2]), "")
                 sent_sect_map[
-                    sent
+                    sent_id
                 ] = f"{first_level_header} @@ {second_level_header} @@ {sect}"
             elif len(sect_number_parts) == 2:
-                first_level_header = all_sections.get(sect_number_parts[0], "")
-                sent_sect_map[sent] = f"{first_level_header} @@ {sect}"
-    return sent_sect_map
+                first_level_header = sections.get(sect_number_parts[0], "")
+                sent_sect_map[sent_id] = f"{first_level_header} @@ {sect}"
+
+    # If there's no introduction section detected, it was probably misclassified
+    # as part of the abstract. We try to disentangle the two sections here.
+    has_intro = False
+    for section in sections.keys():
+        if "introduction" in section.lower():
+            has_intro = True
+            break
+    if not has_intro:
+        # Try to find "Introduction"
+        intro_sent = None
+        for sent_id, section in sent_sect_map.items():
+            sent = sent_by_id[sent_id]
+            if "abstract" not in section.lower():
+                continue
+            found_intro = re.search(r"(?i)\d+\s?Introduction", sent.text)
+            if found_intro:
+                intro_sent = sent
+                break
+
+        if intro_sent:
+            intro_span_start = intro_sent.spans[0].start
+            for sent_id, section in sent_sect_map.items():
+                if "abstract" in section.lower():
+                    if sent_by_id[sent_id].spans[0].start >= intro_span_start:
+                        sent_sect_map[sent_id] = "1 Introduction"
+            sect_box_map["1 Introduction"] = intro_sent.box_group.boxes[0]
+
+    return sent_sect_map, sect_box_map
 
 
 def clean_sentence(sentence):
@@ -180,13 +152,8 @@ def clean_sentence(sentence):
     cleaned = cleaned.encode("ascii", "ignore")
     cleaned = cleaned.decode()
     cleaned = cleaned.replace("- ", "")
+    cleaned = cleaned.strip()
     return cleaned
-
-
-def sentence_has_author_intent(sentence):
-    author_intent_tokens = ["we", "us", "our"]
-    tokens = clean_sentence(sentence.text).lower().split()
-    return any(t in tokens for t in author_intent_tokens)
 
 
 def extract_verbs(sentence):

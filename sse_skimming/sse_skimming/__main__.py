@@ -60,7 +60,7 @@ class PredictorObjConfig:
 @dataclass
 class OpacityCalculatorConfig:
     _target_: str = sp.Target.to_string(OpacityCalculator)
-    threshold: float = 0.75
+    threshold: float = 0.7
     max_opacity: float = 0.4
     min_opacity: float = 0.1
 
@@ -135,11 +135,8 @@ def main(config: SSESkimmingConfig):
 
     for sent in doc.typed_sents:  # type: ignore
         if sent.type in config.valid_types:
-            # Sometimes the layout parser fails and grabs a giant blob of text as a sentence. Skip these.
-            if len(sent.text) > 300:
-                continue
-
-            to_predict["text"].append(clean_sentence(sent.text))
+            sent.text = clean_sentence(sent.text)
+            to_predict["text"].append(sent.text)
             ref_sents.append(sent)
 
         # We map each sentence/spangroup to an enclosing block based on their start spans
@@ -151,110 +148,149 @@ def main(config: SSESkimmingConfig):
                 break
 
     # assign sections to sentences
-    sent_sect_map = assign_sections_to_sentences(doc.typed_sents)
+    sent_sect_map, sect_box_map = assign_sections_to_sentences(doc.typed_sents)
     for sent in ref_sents:
-        sent.section = sent_sect_map[sent.text]
+        sent.section = sent_sect_map[sent.id]
 
     # get trained model predictions for this document
     predictions = predictor.predict_one(to_predict)
 
-    # classify sentences for "novelty"
-    novelty_predictions = classify_novelty(ref_sents)
+    highlights = []
 
-    # classify sentences for "result"
-    result_predictions = classify_result(ref_sents)
+    # get all sentences with "author" statements
+    author_sentences = {s.id for s in ref_sents if sentence_has_author_intent(s)}
 
     # classify sentences for "objective"
-    objective_predictions = classify_objective(ref_sents)
+    objective_predictions = classify_objective_batch(ref_sents)
 
-    # we get the labels and probabilities for each sentence
-    # here; the opacity_calculator returns a score > 0 if the
-    # sentence is relevant, and 0 otherwise.
-    opacity_calculator = sp.init.now(config.opacity, OpacityCalculator)
-    sents = []
-    added_blocks = defaultdict(set)  # facet: block_ids
-    for sent, pred in zip(ref_sents, predictions):
-        pred = {k: round(v, 5) for k, v in pred.items()}
-        label, score = max(pred.items(), key=lambda x: x[1])
-        sent_opacity = opacity_calculator(score)
+    # classify sentences for "novelty"
+    novelty_predictions = classify_novelty_batch(ref_sents)
 
-        labeled_sent = {
-            "id": sent.id,
-            "text": clean_sentence(sent.text),
-            "section": sent.section,
-            "pred": pred,
-            "label": label,
-            "score": score,
-            "boxes": [
-                {
-                    "left": box.l,
-                    "top": box.t,
-                    "width": box.w,
-                    "height": box.h,
-                    "page": box.page,
-                }
-                for box in sent.box_group.boxes
-            ],
-            "block_id": sent.block_uuid,
+    # classify sentences for "result"
+    result_predictions = classify_result_batch(ref_sents)
+
+    # model predictions
+    predictions = predictor.predict_one(to_predict)
+
+    # we want to disable highlights in the abstract only if it's
+    # properly extracted by the layout parser (i.e., should be < 300 words)
+    abstract_sents = [s for s in ref_sents if is_sentence_in_section(s, ["abstract"])]
+    abstract_length = sum(len(s.text.split()) for s in abstract_sents)
+    abstract_correctly_extracted = abstract_length <= 350
+
+    block_discount_factor = 0.1
+    score_threshold = 0.8
+    model_score_threshold = 0.85
+    model_score_factor = 0.1
+    block_to_sents = defaultdict(set)
+    for i, sent in enumerate(ref_sents):
+        num_tokens = len(sent.text.split())
+        if num_tokens > 80 or num_tokens < 5:
+            print("[Abnormal sentence length]", sent.text)
+            continue
+
+        if is_sentence_in_section(sent, ["acknowledgement"]):
+            print("[Acknowledgement]", sent.text)
+            continue
+
+        if "github.com" in sent.text:
+            print("[Github link]", sent.text)
+            continue
+
+        # if abstract_correctly_extracted and is_sentence_in_section(sent, ["abstract"]):
+        #     print("[Skipping abstract]", sent.text)
+        #     continue
+
+        score = 0
+        labels = []
+        if sent.id in author_sentences:
+            score += 1
+            if sent.block_uuid in block_to_sents:
+                score -= max(
+                    0, block_discount_factor * len(block_to_sents[sent.block_uuid])
+                )
+            block_to_sents[sent.block_uuid].add(sent.id)
+
+            if sent.id in objective_predictions:
+                labels.append("objective")
+                score += 1
+
+            if sent_contains_contribution(sent):
+                labels.append("novelty")
+                score += 1
+
+            if sent.id in result_predictions or is_sentence_in_section(
+                sent, ["result"]
+            ):
+                if not is_sentence_in_section(sent, ["method", "approach", "setup"]):
+                    labels.append("result")
+                    score += 1
+
+            if sent.id in novelty_predictions:
+                labels.append("novelty")
+                score += 1
+
+            if not labels:
+                labels.append("method")
+
+            if is_sentence_in_section(sent, ["abstract", "introduction"]):
+                score += 2
+
+            model_label, model_score = max(predictions[i].items(), key=lambda x: x[1])
+            if model_score > model_score_threshold:
+                if model_label in ["objective", "method", "result"]:
+                    if model_label == labels[0]:
+                        score += model_score * model_score_factor
+
+        # print(sent.section, sent.text, labels, score, "\n")
+
+        if score >= score_threshold:
+            highlight = {
+                "id": sent.id,
+                "text": sent.text,
+                "section": sent.section,
+                "label": labels[0],
+                "score": score,
+                "boxes": [
+                    {
+                        "left": box.l,
+                        "top": box.t,
+                        "width": box.w,
+                        "height": box.h,
+                        "page": box.page,
+                    }
+                    for box in sent.box_group.boxes
+                ],
+                "block_id": sent.block_uuid,
+            }
+            highlights.append(highlight)
+
+    sections = [
+        {
+            "section": section,
+            "box": {
+                "left": box.l,
+                "top": box.t,
+                "width": box.w,
+                "height": box.h,
+                "page": box.page,
+            },
         }
+        for section, box in sect_box_map.items()
+    ]
 
-        if sent.id in objective_predictions:
-            labeled_sent["label"] = "objective"
-            labeled_sent["score"] = 1
-            labeled_sent["pred"]["objective"] = 1
-            sents.append(labeled_sent)
-        elif sent.id in novelty_predictions:
-            labeled_sent["label"] = "novelty"
-            labeled_sent["score"] = 1
-            labeled_sent["pred"]["novelty"] = 1
-            sents.append(labeled_sent)
-        elif sent.id in result_predictions:
-            # limit heuristic result predictions to one per block
-            if sent.block_uuid not in added_blocks["result"]:
-                labeled_sent["label"] = "result"
-                labeled_sent["score"] = 1
-                labeled_sent["pred"]["result"] = 1
-                added_blocks["result"].add(sent.block_uuid)
-                sents.append(labeled_sent)
-
-        elif sent_opacity > 0 and label not in ["background", "other"]:
-            # don't return method or results related work section
-            rw_kws = [
-                "related work",
-                "related works",
-                "recent work",
-                "recent works",
-                "background",
-            ]
-            if label in ["method", "result"] and any(
-                kw in sent.section.lower() for kw in rw_kws
-            ):
-                continue
-
-            # don't return results in method section
-            method_kws = ["method", "approach"]
-            if label in ["result"] and any(
-                kw in sent.section.lower() for kw in method_kws
-            ):
-                continue
-
-            # don't return methods in result section
-            result_kws = ["result"]
-            if label in ["method"] and any(
-                kw in sent.section.lower() for kw in result_kws
-            ):
-                continue
-
-            # Limit model predictions to one per block
-            if sent.block_uuid not in added_blocks["model"]:
-                sents.append(labeled_sent)
-                added_blocks["model"].add(sent.block_uuid)
-
-    OUTPUT_DIR = "output"
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Write output
     output_file = os.path.basename(config.src).replace("pdf", "json")
-    with open(os.path.join(OUTPUT_DIR, output_file), "w") as out:
-        json.dump(sents, out, indent=2)
+
+    HIGHLIGHTS_DIR = "output/highlights"
+    os.makedirs(HIGHLIGHTS_DIR, exist_ok=True)
+    with open(os.path.join(HIGHLIGHTS_DIR, output_file), "w") as out:
+        json.dump(highlights, out, indent=2)
+
+    SECTIONS_DIR = "output/sections"
+    os.makedirs(SECTIONS_DIR, exist_ok=True)
+    with open(os.path.join(SECTIONS_DIR, output_file), "w") as out:
+        json.dump(sections, out, indent=2)
 
 
 if __name__ == "__main__":
