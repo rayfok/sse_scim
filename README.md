@@ -1,2 +1,2 @@
-# paper-details-on-demand
-Code for exploration of https://docs.google.com/document/d/1VFXd4FGdsve7bWd_1IwmKVIsQWjBr65l3TBHIzGDMaU
+# distant supervision for Scim models
+Code for weak labeling of full-text scientific documents for significant statements and statement facet classification.

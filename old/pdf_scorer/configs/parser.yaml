@@ -1,4 +1,0 @@
-# parser:
-#   _target_: mmda.parsers.symbol_scraper_parser.SymbolScraperParser
-
-vila: null
