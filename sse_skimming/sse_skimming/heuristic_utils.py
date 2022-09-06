@@ -1,5 +1,4 @@
 import re
-from collections import defaultdict
 
 import spacy
 from pdf2sents.typed_predictors import TypedBlockPredictor
@@ -70,15 +69,8 @@ def is_sentence_in_section(sentence, sections):
     return any(section in sentence.section.lower() for section in sections)
 
 
-def assign_sections_to_sentences(sents):
+def make_sent_sect_map(sents, valid_types):
     sent_by_id = {s.id: s for s in sents}
-    sent_fields = [
-        TypedBlockPredictor.Text,
-        TypedBlockPredictor.ListType,
-        TypedBlockPredictor.Abstract,
-    ]
-    sect_fields = [TypedBlockPredictor.Title]
-    sents = [s for s in sents if s.type in sent_fields + sect_fields]
     sents = sorted(sents, key=lambda x: x.spans[0].start)
     sent_sect_map = {}
     sent_span_map = {}  # map sentence to starting span location
@@ -87,9 +79,9 @@ def assign_sections_to_sentences(sents):
     sections = {}  # map section number to section header text
     current_section = "Abstract"
     for sent in sents:
-        if sent.type in sent_fields:
+        if sent.type in valid_types:
             sent_sect_map[sent.id] = current_section
-        else:
+        elif sent.type == TypedBlockPredictor.Title:
             current_section = sent.text
             match = re.search(r"[-+]?\d*\.\d+|\d+", current_section)
             if match:
@@ -142,6 +134,21 @@ def assign_sections_to_sentences(sents):
             sect_box_map["1 Introduction"] = intro_sent.box_group.boxes[0]
 
     return sent_sect_map, sect_box_map
+
+
+def make_sent_block_map(sents, typed_blocks):
+    blocks = [(b.spans[0].start, b.spans[0].end, b.uuid) for b in typed_blocks]
+    blocks = sorted(blocks, key=lambda b: b[1])
+
+    sent_block_map = {}
+    for sent in sents:
+        for block_span_range in blocks:
+            _, block_span_end, block_uuid = block_span_range
+            if sent.spans[0].start <= block_span_end:
+                sent_block_map[sent.id] = block_uuid
+                break
+
+    return sent_block_map
 
 
 def clean_sentence(sentence):

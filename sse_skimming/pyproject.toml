@@ -8,7 +8,7 @@ homepage = "https://github.com/allenai/paper-details-on-demand/tree/main/sse-ski
 repository = "https://github.com/allenai/paper-details-on-demand/"
 readme = "README.md"
 packages = [
-    { include = "sse_skimming" },
+    { include = "sse_skimming" }, { include = "weak_label" }
 ]
 
 [tool.poetry.dependencies]
@@ -19,6 +19,9 @@ pdf2sents = { path = "../pdf2sents/" }
 scipy = "^1.8.0"
 smashed = "^0.1.6"
 cached-path = "^1.1.5"
+effdet = "^0.3.0"
+snorkel = "^0.9.9"
+spacy = "^3.4.1"
 
 [tool.poetry.dev-dependencies]
 black = "^22.6.0"

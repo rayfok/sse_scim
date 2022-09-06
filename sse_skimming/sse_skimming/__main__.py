@@ -1,18 +1,18 @@
 import json
 import os
-from copy import deepcopy
-from dataclasses import dataclass, field
-from email.policy import default
-from pathlib import Path
-from typing import Dict, List, Optional, Type
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
+from typing import Dict, List, Optional
 
 import springs as sp
 from cached_path import cached_path
+from mmda.types.metadata import Metadata
 from pdf2sents.pipeline import Pipeline, PipelineConfig
 from pdf2sents.typed_predictors import TypedBlockPredictor
 from pdf2sents.visualization import VizAny
 
-from sse_skimming.heuristics import *
+from sse_skimming.data_programming import build_dataset
+from sse_skimming.heuristic_utils import *
 from sse_skimming.predictor import Predictor, PredictorConfig
 
 
@@ -107,66 +107,45 @@ def main(config: SSESkimmingConfig):
     # this returns an mmda object annotated with sentence
     doc = pipeline.run(config.src)
 
-    # this is used to map each sentence to an enclosing block
-    block_to_sents = {}
-    for block in doc.typed_blocks:
-        block_to_sents[(block.spans[0].start, block.spans[0].end, block.uuid)] = []
+    # output sentences and metadata in a more compact format for downstream tasks
+    instances = build_dataset(doc, config.valid_types)
+    output_path = "output/dataset/raw"
+    os.makedirs(output_path, exist_ok=True)
+    output_file = os.path.basename(config.src).replace("pdf", "json")
+    with open(os.path.join(output_path, output_file), "w") as out:
+        json.dump([asdict(i) for i in instances], out)
+    return
 
     # we only call the predictor on sentences that are of type in
     # config.valid_types; by default, this is main blocks of text and
     # lists.
     to_predict: Dict[str, List[str]] = {"text": []}
     ref_sents = []
-
-    # if os.path.exists("author_verbs.txt"):
-    #     with open("author_verbs.txt", "r") as f:
-    #         verbs = {line.strip() for line in f}
-    # else:
-    #     verbs = set()
-    # for sent in doc.typed_sents:
-    #     sent.text = clean_sentence(sent.text)
-    #     if sent.type in config.valid_types:
-    #         if sentence_has_author_intent(sent):
-    #             verbs.update(set(extract_verbs(sent)))
-    # with open("author_verbs.txt", "w") as out:
-    #     for verb in sorted(list(verbs)):
-    #         out.write(verb + "\n")
-    # return
-
     for sent in doc.typed_sents:  # type: ignore
         if sent.type in config.valid_types:
             sent.text = clean_sentence(sent.text)
             to_predict["text"].append(sent.text)
             ref_sents.append(sent)
 
-        # We map each sentence/spangroup to an enclosing block based on their start spans
-        for block_span_range in block_to_sents.keys():
-            block_span_start, block_span_end, block_uuid = block_span_range
-            if sent.spans[0].start <= block_span_end:
-                block_to_sents[block_span_range].append(sent)
-                sent.block_uuid = block_uuid
-                break
+    # used to assign a block id to sentence
+    sent_block_map = make_sent_block_map(doc.typed_sents, doc.typed_blocks)
+    for sent in ref_sents:
+        sent.block_uuid = sent_block_map[sent.id]
 
-    # assign sections to sentences
-    sent_sect_map, sect_box_map = assign_sections_to_sentences(doc.typed_sents)
+    # used to assign section to a sentence
+    sent_sect_map, sect_box_map = make_sent_sect_map(
+        doc.typed_sents, config.valid_types
+    )
     for sent in ref_sents:
         sent.section = sent_sect_map[sent.id]
-
-    # get trained model predictions for this document
-    predictions = predictor.predict_one(to_predict)
-
-    highlights = []
 
     # get all sentences with "author" statements
     author_sentences = {s.id for s in ref_sents if sentence_has_author_intent(s)}
 
-    # classify sentences for "objective"
     objective_predictions = classify_objective_batch(ref_sents)
 
-    # classify sentences for "novelty"
     novelty_predictions = classify_novelty_batch(ref_sents)
 
-    # classify sentences for "result"
     result_predictions = classify_result_batch(ref_sents)
 
     # model predictions
@@ -174,16 +153,20 @@ def main(config: SSESkimmingConfig):
 
     # we want to disable highlights in the abstract only if it's
     # properly extracted by the layout parser (i.e., should be < 300 words)
-    abstract_sents = [s for s in ref_sents if is_sentence_in_section(s, ["abstract"])]
-    abstract_length = sum(len(s.text.split()) for s in abstract_sents)
-    abstract_correctly_extracted = abstract_length <= 350
+    # abstract_sents = [s for s in ref_sents if is_sentence_in_section(s, ["abstract"])]
+    # abstract_length = sum(len(s.text.split()) for s in abstract_sents)
+    # abstract_correctly_extracted = abstract_length <= 350
 
+    highlights = []
     block_discount_factor = 0.1
     score_threshold = 0.8
     model_score_threshold = 0.85
     model_score_factor = 0.1
     block_to_sents = defaultdict(set)
     for i, sent in enumerate(ref_sents):
+        sent.metadata = Metadata.from_json(
+            {**sent.metadata.to_json(), "heuristics": {"label": "other", "weight": 0},}
+        )
         num_tokens = len(sent.text.split())
         if num_tokens > 80 or num_tokens < 5:
             print("[Abnormal sentence length]", sent.text)
@@ -242,6 +225,8 @@ def main(config: SSESkimmingConfig):
                     if model_label == labels[0]:
                         score += model_score * model_score_factor
 
+            sent.metadata.heuristics = {"label": labels[0], "weight": score}
+
         # print(sent.section, sent.text, labels, score, "\n")
 
         if score >= score_threshold:
@@ -282,15 +267,55 @@ def main(config: SSESkimmingConfig):
     # Write output
     output_file = os.path.basename(config.src).replace("pdf", "json")
 
+    # Output weak labels for all sentences in the paper
+    WEAK_LABELS_DIR = "output/weak_labels"
+    os.makedirs(WEAK_LABELS_DIR, exist_ok=True)
+    output_file = os.path.basename(config.src).replace("pdf", "json")
+    with open(os.path.join(WEAK_LABELS_DIR, output_file), "w") as out:
+        json.dump([s.to_json() for s in doc.typed_sents], out)
+
+    return
+
+    # Output highlight sentences with metadata (e.g., facet, score, section, ...)
     HIGHLIGHTS_DIR = "output/highlights"
     os.makedirs(HIGHLIGHTS_DIR, exist_ok=True)
     with open(os.path.join(HIGHLIGHTS_DIR, output_file), "w") as out:
         json.dump(highlights, out, indent=2)
 
+    # Output section headers with bounding box data
     SECTIONS_DIR = "output/sections"
     os.makedirs(SECTIONS_DIR, exist_ok=True)
     with open(os.path.join(SECTIONS_DIR, output_file), "w") as out:
         json.dump(sections, out, indent=2)
+
+    # Output model predictions
+    MODEL_PREDS_DIR = "output/model"
+    os.makedirs(MODEL_PREDS_DIR, exist_ok=True)
+    with open(os.path.join(MODEL_PREDS_DIR, output_file), "w") as out:
+        to_output = []
+        for sent, preds in zip(ref_sents, predictions):
+            label, score = max(preds.items(), key=lambda x: x[1])
+            to_output.append(
+                {
+                    "id": sent.id,
+                    "text": sent.text,
+                    "section": sent.section,
+                    "label": label,
+                    "score": score,
+                    "boxes": [
+                        {
+                            "left": box.l,
+                            "top": box.t,
+                            "width": box.w,
+                            "height": box.h,
+                            "page": box.page,
+                        }
+                        for box in sent.box_group.boxes
+                    ],
+                    "block_id": sent.block_uuid,
+                }
+            )
+        json.dump(to_output, out, indent=2)
 
 
 if __name__ == "__main__":
