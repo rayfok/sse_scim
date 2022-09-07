@@ -6,7 +6,7 @@ from weak_label.lfs import Annotator
 
 def main():
     dataset = load_dataset(src="output/dataset/raw/")
-    dataset = dataset[:100]
+    dataset = dataset[:1000]
 
     ann = Annotator()
     lfs = [
@@ -29,9 +29,7 @@ def main():
 
     preds = ann.predict(labels, agg_model="label")
     for pred, x in zip(preds, dataset):
-        label, score = np.argmax(pred), pred[np.argmax(pred)]
-        x.label = int(label)
-        x.score = float(score)
+        x.label = int(pred)
 
     export_labeled_dataset(dataset, dst="output/snorkel/weak_labels.json")
 

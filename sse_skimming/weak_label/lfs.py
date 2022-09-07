@@ -4,7 +4,8 @@ from typing import List
 import numpy as np
 import spacy
 from pdf2sents.typed_predictors import TypedBlockPredictor
-from snorkel.labeling import LabelingFunction, LFAnalysis, LFApplier, labeling_function
+from snorkel.labeling import (LabelingFunction, LFAnalysis, LFApplier,
+                              labeling_function)
 from snorkel.labeling.model import LabelModel, MajorityLabelVoter
 from snorkel.preprocess.nlp import SpacyPreprocessor
 from spaczz.matcher import FuzzyMatcher
@@ -156,9 +157,7 @@ class Annotator:
     def is_list_elem_in_introduction(x: Instance) -> int:
         if x.type != TypedBlockPredictor.ListType:
             return ABSTAIN
-        matcher = FuzzyMatcher(Annotator.nlp.vocab)
-        matcher.add("intro", [Annotator.nlp("introduction")])
-        matches = matcher(Annotator.nlp(x.section))
+        matches = Annotator._find_section_matches(x, ["introduction"])
         return SIG if matches else ABSTAIN
 
     def apply_labeling_functions(self, dataset, lfs: List[LabelingFunction]):
@@ -175,4 +174,4 @@ class Annotator:
         elif agg_model == "label":
             model = LabelModel(cardinality=2, verbose=True)
             model.fit(L_train=labels, n_epochs=500, log_freq=100, seed=69)
-            return model.predict_proba(labels)
+            return model.predict(labels, tie_break_policy="abstain")

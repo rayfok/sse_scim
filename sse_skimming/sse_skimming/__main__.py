@@ -274,8 +274,6 @@ def main(config: SSESkimmingConfig):
     with open(os.path.join(WEAK_LABELS_DIR, output_file), "w") as out:
         json.dump([s.to_json() for s in doc.typed_sents], out)
 
-    return
-
     # Output highlight sentences with metadata (e.g., facet, score, section, ...)
     HIGHLIGHTS_DIR = "output/highlights"
     os.makedirs(HIGHLIGHTS_DIR, exist_ok=True)

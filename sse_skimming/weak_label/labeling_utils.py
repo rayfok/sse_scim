@@ -21,4 +21,5 @@ def export_labeled_dataset(dataset: List[Instance], dst: str) -> None:
     dst = Path(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     with open(dst, "w") as out:
+        dataset = [x for x in dataset if x.label != -1]
         json.dump(dataset, out, default=lambda x: x.__dict__)
