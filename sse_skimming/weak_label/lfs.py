@@ -4,8 +4,7 @@ from typing import List
 import numpy as np
 import spacy
 from pdf2sents.typed_predictors import TypedBlockPredictor
-from snorkel.labeling import (LabelingFunction, LFAnalysis, LFApplier,
-                              labeling_function)
+from snorkel.labeling import LabelingFunction, LFAnalysis, LFApplier, labeling_function
 from snorkel.labeling.model import LabelModel, MajorityLabelVoter
 from snorkel.preprocess import preprocessor
 from snorkel.preprocess.nlp import SpacyPreprocessor
@@ -35,6 +34,8 @@ class Annotator:
         )
 
     def _find_section_matches(x: Instance, sections: List[str]):
+        if not x.section:
+            return None
         matcher = FuzzyMatcher(Annotator.nlp.vocab)
         for section in sections:
             matcher.add(section, [Annotator.nlp(section)])

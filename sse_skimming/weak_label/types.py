@@ -6,15 +6,16 @@ from enum import IntEnum
 @dataclass
 class Instance:
     id: int
-    type: str
     text: str
-    section: str
-    block_id: str
-    span_start: int
-    span_end: int
+    type: Optional[str] = ""
+    section: Optional[str] = ""
+    block_id: Optional[str] = -1
+    span_start: Optional[int] = -1
+    span_end: Optional[int] = -1
     doc_id: str = ""
     label: Optional[str] = None
     score: Optional[int] = None
+
 
 class Label(IntEnum):
     ABSTAIN = -1

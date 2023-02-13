@@ -1,10 +1,16 @@
-from weak_label.labeling_utils import export_labeled_dataset, load_dataset
+from weak_label.labeling_utils import export_labeled_dataset, load_csabstruct_from_jsonl, load_dataset
 from weak_label.lfs import Annotator
 from weak_label.types import Label
 
 
 def main():
-    dataset = load_dataset(src="output/dataset/raw/")
+    src = "output/csabstruct/cleaned_full_text.jsonl"
+    dst = "output/csabstruct/weak_labels.jsonl"
+    dataset = load_csabstruct_from_jsonl(src)
+
+    # src = "output/dataset/raw/"
+    # dst = "output/snorkel/weak_labels.jsonl"
+    # dataset = load_dataset(src)
 
     ann = Annotator()
     lfs = [
@@ -33,7 +39,7 @@ def main():
         dataset,
         text_and_labels_only=True,
         filter_abstain=False,
-        dst="output/snorkel/weak_labels.json",
+        dst=dst,
     )
 
 

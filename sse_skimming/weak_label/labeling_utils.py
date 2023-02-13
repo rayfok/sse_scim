@@ -1,11 +1,42 @@
 import json
 import os
+from collections import defaultdict
 from glob import glob
 from pathlib import Path
 from typing import List
-from collections import defaultdict
+
+import pysbd
+from tqdm import tqdm
 
 from weak_label.types import Instance
+
+
+def load_csabstruct_from_jsonl(src: str) -> List[Instance]:
+    """
+    Returns a single list of Instances from a .jsonl file.
+    Each line of the file should contain a json for a single paper.
+    """
+    dataset = []
+    num_papers = sum(1 for _ in open(src, "r"))
+    seg = pysbd.Segmenter(language="en", clean=False)
+    with open(src, "r") as f:
+        for line in tqdm(
+            f, desc="Loading dataset", total=num_papers, unit="paper"
+        ):
+            paper = json.loads(line)
+            for x in paper["full_text"]:
+                # "full_text" contains all sentences for a single section
+                # first split it into sentences using pysbd
+                for sentence in seg.segment(x["text"]):
+                    dataset.append(
+                        Instance(
+                            id=len(dataset),
+                            doc_id=paper["paper_id"],
+                            text=sentence,
+                            section=x["title"],  # Can be None
+                        )
+                    )
+    return dataset
 
 
 def load_dataset(src: str) -> List[Instance]:
@@ -40,7 +71,8 @@ def export_labeled_dataset(
                             "sents": [x.text for x in instances],
                             "labels": [x.label for x in instances],
                         }
-                    ) + "\n"
+                    )
+                    + "\n"
                 )
     else:
         with open(dst.with_suffix(".json"), "w") as out:

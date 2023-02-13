@@ -107,14 +107,13 @@ def main(config: SSESkimmingConfig):
     # this returns an mmda object annotated with sentence
     doc = pipeline.run(config.src)
 
-    # output sentences and metadata in a more compact format for downstream tasks
-    instances = build_dataset(doc, config.valid_types)
-    output_path = "output/dataset/raw"
-    os.makedirs(output_path, exist_ok=True)
-    output_file = os.path.basename(config.src).replace("pdf", "json")
-    with open(os.path.join(output_path, output_file), "w") as out:
-        json.dump([asdict(i) for i in instances], out)
-    return
+    # # output sentences and metadata in a more compact format for downstream tasks
+    # instances = build_dataset(doc, config.valid_types)
+    # output_path = "output/dataset/raw"
+    # os.makedirs(output_path, exist_ok=True)
+    # output_file = os.path.basename(config.src).replace("pdf", "json")
+    # with open(os.path.join(output_path, output_file), "w") as out:
+    #     json.dump([asdict(i) for i in instances], out)
 
     # we only call the predictor on sentences that are of type in
     # config.valid_types; by default, this is main blocks of text and
@@ -267,12 +266,13 @@ def main(config: SSESkimmingConfig):
     # Write output
     output_file = os.path.basename(config.src).replace("pdf", "json")
 
-    # Output weak labels for all sentences in the paper
-    WEAK_LABELS_DIR = "output/weak_labels"
-    os.makedirs(WEAK_LABELS_DIR, exist_ok=True)
-    output_file = os.path.basename(config.src).replace("pdf", "json")
-    with open(os.path.join(WEAK_LABELS_DIR, output_file), "w") as out:
-        json.dump([s.to_json() for s in doc.typed_sents], out)
+    # # DEPRECATED: Replaced by snorkel weak supervision
+    # # Output weak labels for all sentences in the paper
+    # WEAK_LABELS_DIR = "output/weak_labels"
+    # os.makedirs(WEAK_LABELS_DIR, exist_ok=True)
+    # output_file = os.path.basename(config.src).replace("pdf", "json")
+    # with open(os.path.join(WEAK_LABELS_DIR, output_file), "w") as out:
+    #     json.dump([s.to_json() for s in doc.typed_sents], out)
 
     # Output highlight sentences with metadata (e.g., facet, score, section, ...)
     HIGHLIGHTS_DIR = "output/highlights"

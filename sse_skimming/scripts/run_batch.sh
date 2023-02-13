@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ### TEST SET ###
-# NAACL 2022: 1 - 443 (443)
+# NAACL 2022: 1 - 442 (442)
 # ================================
 # TOTAL: 443 papers
 
@@ -15,20 +15,37 @@
 # ================================
 # TOTAL: 3,058
 
-START=$1
-END=$2
+while getopts "c:s:e:" opt; do
+  case $opt in
+    c) corpus="$OPTARG" ;;
+    s) start="$OPTARG" ;;
+    e) end="$OPTARG" ;;
+  esac
+done
 
-for (( i=$START; i<=$END; i++ ))
-do
-    # NAACL22="https://aclanthology.org/2022.naacl-main.$i.pdf"
-    # NAACL21="https://aclanthology.org/2021.naacl-main.$i.pdf"
-    NAACL19="https://aclanthology.org/N19-$i.pdf"
-    # NAACL18="https://aclanthology.org/N18-$i.pdf"
-    # ACL22="https://aclanthology.org/2022.acl-long.$i.pdf"
-    # ACL21="https://aclanthology.org/2021.acl-long.$i.pdf"
-    # ACL20="https://aclanthology.org/2020.acl-main.$i.pdf"
+for (( i=$start; i<=$end; i++ ))
+  do
 
-    python -m sse_skimming \
-            src=$NAACL19 \
-            dst=./output
+  if [[ $corpus == "NAACL22" ]]; then
+    src="https://aclanthology.org/2022.naacl-main.$i.pdf"
+  elif [[ $corpus == "NAACL21" ]]; then
+    src="https://aclanthology.org/2021.naacl-main.$i.pdf"
+  elif [[ $corpus == "NAACL19" ]]; then
+    src="https://aclanthology.org/N19-$i.pdf"
+  elif [[ $corpus == "NAACL18" ]]; then
+    src="https://aclanthology.org/N18-$i.pdf"
+  elif [[ $corpus == "ACL22" ]]; then
+    src="https://aclanthology.org/2022.acl-long.$i.pdf"
+  elif [[ $corpus == "ACL21" ]]; then
+    src="https://aclanthology.org/2021.acl-long.$i.pdf"
+  elif [[ $corpus == "ACL20" ]]; then
+    src="https://aclanthology.org/2020.acl-main.$i.pdf"
+  else
+    echo "Invalid corpus:" $corpus
+    exit 1
+  fi
+
+  python -m sse_skimming \
+          src=$src \
+          dst=./output
 done
